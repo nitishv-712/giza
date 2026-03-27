@@ -1,0 +1,25 @@
+// android/app/build.gradle
+// NOTE: This is a template — merge with your existing build.gradle.
+// Key requirement for youtube_player_flutter: minSdkVersion >= 17
+
+android {
+    compileSdkVersion 34
+
+    defaultConfig {
+        applicationId "com.example.giza"
+        minSdkVersion 17        // Required by youtube_player_flutter
+        targetSdkVersion 34
+        versionCode 1
+        versionName "1.0.0"
+    }
+
+    buildTypes {
+        release {
+            signingConfig signingConfigs.debug
+        }
+    }
+}
+
+dependencies {
+    implementation "org.jetbrains.kotlin:kotlin-stdlib-jdk7:$kotlin_version"
+}
