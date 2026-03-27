@@ -4,7 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import 'db/hive_helper.dart';
-import 'services/audius_service.dart';
+import 'services/audio_service.dart';
 import 'screens/home_screen.dart';
 
 void main() async {
@@ -13,8 +13,8 @@ void main() async {
   // 1. Init Hive on-device storage
   await HiveHelper.instance.init();
 
-  // 2. Pre-fetch an Audius API host in the background
-  AudiusService.instance.host.catchError((_) => '');
+  // 2. Init Audio Service
+  AudioService.instance.init();
 
   // 3. Lock to portrait
   await SystemChrome.setPreferredOrientations([

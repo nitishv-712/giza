@@ -15,72 +15,48 @@ class HiveHelper {
   late Box<Map>     _history;
   late Box<dynamic> _settings;
 
-  // ── Init ───────────────────────────────────────────────────────────────────
-
   Future<void> init() async {
     await Hive.initFlutter();
-    if (!Hive.isAdapterRegistered(0)) {
-      Hive.registerAdapter(SongAdapter());
-    }
+    if (!Hive.isAdapterRegistered(0)) Hive.registerAdapter(SongAdapter());
     _songs    = await Hive.openBox<Song>(_boxSongs);
     _history  = await Hive.openBox<Map>(_boxHistory);
     _settings = await Hive.openBox<dynamic>(_boxSettings);
   }
 
-  // ══════════════════════════════════════════════════════════════════════════
-  // SONGS
-  // ══════════════════════════════════════════════════════════════════════════
+  // ── Songs ──────────────────────────────────────────────────────────────────
 
-  List<Song> getAllSavedSongs() {
-    final list = _songs.values.toList();
-    list.sort((a, b) => b.createdAt.compareTo(a.createdAt));
-    return list;
-  }
+  List<Song> getAllSavedSongs() =>
+      _songs.values.toList()..sort((a, b) => b.createdAt.compareTo(a.createdAt));
 
-  List<Song> getFavourites() {
-    return _songs.values.where((s) => s.isFavourite).toList()
-      ..sort((a, b) => a.title.compareTo(b.title));
-  }
+  List<Song> getFavourites() =>
+      _songs.values.where((s) => s.isFavourite).toList()
+        ..sort((a, b) => a.title.compareTo(b.title));
 
-  List<Song> searchSavedSongs(String query) {
-    final q = query.toLowerCase();
-    return _songs.values
-        .where((s) =>
-            s.title.toLowerCase().contains(q) ||
-            s.artist.toLowerCase().contains(q) ||
-            s.album.toLowerCase().contains(q))
-        .toList()
-      ..sort((a, b) => a.title.compareTo(b.title));
-  }
-
-  Song? getSongByAudiusId(String trackId) {
+  Song? getSongByVideoId(String videoId) {
     try {
-      return _songs.values.firstWhere((s) => s.audiusTrackId == trackId);
+      return _songs.values.firstWhere((s) => s.youtubeVideoId == videoId);
     } catch (_) {
       return null;
     }
   }
 
-  /// Upserts a song keyed on audiusTrackId.
   Future<Song> saveSong(Song song) async {
-    if (song.audiusTrackId != null) {
-      final existing = getSongByAudiusId(song.audiusTrackId!);
-      if (existing != null) {
-        existing
-          ..isFavourite  = song.isFavourite
-          ..playCount    = song.playCount
-          ..lastPlayedAt = song.lastPlayedAt;
-        await existing.save();
-        return existing;
-      }
+    final key = song.youtubeVideoId ?? DateTime.now().millisecondsSinceEpoch.toString();
+    final existing = _songs.get(key);
+    if (existing != null) {
+      existing
+        ..isFavourite  = song.isFavourite
+        ..playCount    = song.playCount
+        ..lastPlayedAt = song.lastPlayedAt;
+      await existing.save();
+      return existing;
     }
-    final key = song.audiusTrackId ?? DateTime.now().millisecondsSinceEpoch.toString();
     await _songs.put(key, song);
     return song;
   }
 
   Future<void> toggleFavourite(Song song, bool value) async {
-    final key = song.audiusTrackId ?? song.id.toString();
+    final key = song.youtubeVideoId ?? song.id.toString();
     final s = _songs.get(key);
     if (s != null) {
       s.isFavourite = value;
@@ -88,30 +64,24 @@ class HiveHelper {
     }
   }
 
-  Future<void> deleteSong(Song song) async {
-    await _songs.delete(song.audiusTrackId ?? song.id.toString());
-  }
+  Future<void> deleteSong(Song song) async =>
+      _songs.delete(song.youtubeVideoId ?? song.id.toString());
 
-  // ══════════════════════════════════════════════════════════════════════════
-  // PLAY HISTORY
-  // ══════════════════════════════════════════════════════════════════════════
+  // ── History ────────────────────────────────────────────────────────────────
 
   Future<void> logPlay(Song song) async {
-    final key = song.audiusTrackId ?? song.id.toString();
+    final key = song.youtubeVideoId ?? song.id.toString();
     final s = _songs.get(key);
     if (s != null) {
       s.playCount++;
       s.lastPlayedAt = DateTime.now();
       await s.save();
     }
-
     final histKey = DateTime.now().toIso8601String();
     await _history.put(histKey, {
-      'audius_track_id': song.audiusTrackId,
+      'video_id':  song.youtubeVideoId,
       'played_at': histKey,
     });
-
-    // Trim to 50 newest entries
     if (_history.length > 50) {
       final keys = _history.keys.toList()..sort();
       await _history.deleteAll(keys.take(_history.length - 50));
@@ -122,14 +92,13 @@ class HiveHelper {
     final entries = _history.values.toList()
       ..sort((a, b) =>
           (b['played_at'] as String).compareTo(a['played_at'] as String));
-
     final seen   = <String>{};
     final result = <Song>[];
     for (final e in entries) {
-      final id = e['audius_track_id'] as String?;
+      final id = e['video_id'] as String?;
       if (id == null || seen.contains(id)) continue;
       seen.add(id);
-      final song = getSongByAudiusId(id);
+      final song = getSongByVideoId(id);
       if (song != null) result.add(song);
       if (result.length >= limit) break;
     }
@@ -138,9 +107,7 @@ class HiveHelper {
 
   Future<void> clearHistory() => _history.clear();
 
-  // ══════════════════════════════════════════════════════════════════════════
-  // SETTINGS
-  // ══════════════════════════════════════════════════════════════════════════
+  // ── Settings ───────────────────────────────────────────────────────────────
 
   T? getSetting<T>(String key) => _settings.get(key) as T?;
   Future<void> setSetting(String key, dynamic v) => _settings.put(key, v);
