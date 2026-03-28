@@ -1,5 +1,5 @@
 import 'dart:async';
-import 'package:flutter/services.dart'; // Add this
+import 'package:flutter/services.dart';
 import 'package:youtube_explode_dart/youtube_explode_dart.dart';
 import '../models/song.dart';
 
@@ -33,6 +33,7 @@ class YoutubeService {
       });
 
       onProgress?.call(1.0);
+      print('Downloaded: $filePath');
       return filePath;
     } on PlatformException catch (e) {
       throw Exception('yt-dlp download failed: ${e.message}');
