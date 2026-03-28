@@ -400,14 +400,6 @@ packages:
     description: flutter
     source: sdk
     version: "0.0.0"
-  flutter_yt_dlp:
-    dependency: "direct main"
-    description:
-      name: flutter_yt_dlp
-      sha256: d25cf4d52bd77e49e036b6db52ba912833bbf2e366a8210cb9d3bd9b41fd1269
-      url: "https://pub.dev"
-    source: hosted
-    version: "0.2.2"
   freezed_annotation:
     dependency: transitive
     description:
