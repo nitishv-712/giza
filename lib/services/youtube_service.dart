@@ -1,7 +1,7 @@
 // lib/services/youtube_service.dart
 
-import 'dart:io';
-import 'package:dio/dio.dart';
+import 'dart:async';
+import 'package:flutter_yt_dlp/flutter_yt_dlp.dart';
 import 'package:youtube_explode_dart/youtube_explode_dart.dart';
 import '../models/song.dart';
 
@@ -9,108 +9,59 @@ class YoutubeService {
   YoutubeService._();
   static final YoutubeService instance = YoutubeService._();
 
-  final _yt = YoutubeExplode();
-  final _dio = Dio(); // Used for downloading files
+  final _yt     = YoutubeExplode();
+  final _client = FlutterYtDlpClient();
 
-  // ── Streaming ──────────────────────────────────────────────────────────────
+  // ── Download ───────────────────────────────────────────────────────────────
 
-  /// Fetches the direct playable URL for an audio player.
-  /// Use this URL in packages like just_audio or audioplayers.
-  Future<String?> getBestAudioStreamLikeYtDlp(String videoId) async {
-    try {
-      // yt-dlp first gets the full manifest
-      final manifest = await _yt.videos.streamsClient.getManifest(videoId);
-
-      // yt-dlp logic: Prefer Opus (WebM) over AAC (M4A) for higher fidelity
-      // and sort by bitrate descending.
-      final streamInfo = manifest.audioOnly
-          .where((s) => s.codec.mimeType == 'audio/webm') // Opus is usually in webm
-          .toList();
-
-      // If webm streams are found, get the highest bitrate one
-      StreamInfo? finalStream;
-      if (streamInfo.isNotEmpty) {
-        finalStream = streamInfo.reduce((a, b) => 
-          a.bitrate.bitsPerSecond > b.bitrate.bitsPerSecond ? a : b
-        );
-      } else {
-        // Fall back to any highest bitrate audio
-        finalStream = manifest.audioOnly.withHighestBitrate();
-      }
-
-      return finalStream.url.toString();
-    } catch (e) {
-      print('yt-dlp style fetch failed: $e');
-      return null;
-    }
-  }
-
-  // ── Downloading ────────────────────────────────────────────────────────────
-
-  Future<void> downloadInFragments(
-    String url,
-    String savePath, {
-    Function(double)? onProgress,
+  /// Downloads best audio-only format to [outputDir]/[videoId].mp3.
+  /// Returns the saved file path on completion.
+  Future<String> downloadAudio(
+    String videoId,
+    String outputDir, {
+    void Function(double)? onProgress,
   }) async {
-    // yt-dlp often downloads in 10MB chunks to prevent YouTube from throttling
-    int chunkSize = 10 * 1024 * 1024;
-    int start = 0;
-    int totalDownloaded = 0;
+    final url  = 'https://youtu.be/$videoId';
+    final info = await _client.getVideoInfo(url);
 
-    // First, get the total file size
-    int? totalSize;
-    try {
-      final headResponse = await _dio.head(url);
-      final contentLength = headResponse.headers.value('content-length');
-      if (contentLength != null) {
-        totalSize = int.parse(contentLength);
-      }
-    } catch (e) {
-      print('Could not get file size: $e');
+    final audioFormats = info['rawAudioOnlyFormats'] as List?;
+    if (audioFormats == null || audioFormats.isEmpty) {
+      throw Exception('No audio-only formats found for $videoId');
     }
 
-    File file = File(savePath);
-    if (file.existsSync()) {
-      await file.delete();
-    }
-    var raf = await file.open(mode: FileMode.append);
+    // Pick highest bitrate
+    final format = audioFormats.reduce((a, b) =>
+        ((a['tbr'] ?? 0) as num) >= ((b['tbr'] ?? 0) as num) ? a : b);
 
-    while (true) {
-      try {
-        final response = await _dio.get(
-          url,
-          options: Options(
-            headers: {'Range': 'bytes=$start-${start + chunkSize - 1}'},
-            responseType: ResponseType.bytes,
-          ),
-        );
+    final taskId = await _client.startDownload(
+      format: format,
+      outputDir: outputDir,
+      url: url,
+      overwrite: true,
+      overrideName: videoId,
+    );
 
-        await raf.writeFrom(response.data);
-        totalDownloaded += (response.data as List).length;
+    final completer = Completer<String>();
 
-        // Report progress
-        if (onProgress != null && totalSize != null) {
-          final progress = totalDownloaded / totalSize;
-          onProgress(progress.clamp(0.0, 1.0));
+    _client.getDownloadEvents().listen((event) {
+      if (event['taskId'] != taskId) return;
+      if (event['type'] == 'progress') {
+        final total = (event['total'] as int?) ?? 0;
+        if (total > 0) {
+          onProgress?.call(((event['downloaded'] as int) / total).clamp(0.0, 1.0));
         }
-
-        // If we received less than the chunk size, we are at the end of the file
-        if ((response.data as List).length < chunkSize) {
-          if (onProgress != null) {
-            onProgress(1.0); // Ensure we report 100% at the end
-          }
-          break;
+      } else if (event['type'] == 'state') {
+        final state = event['stateName'] as String?;
+        if (state == 'completed' && !completer.isCompleted) {
+          onProgress?.call(1.0);
+          completer.complete(event['outputPath'] as String? ?? '$outputDir/$videoId.mp3');
+        } else if (state == 'failed' && !completer.isCompleted) {
+          completer.completeError(Exception('yt-dlp download failed'));
         }
-
-        start += chunkSize;
-        print("Downloaded: ${totalDownloaded / (1024 * 1024)} MB");
-      } catch (e) {
-        print('Download chunk error: $e');
-        break;
       }
-    }
-    await raf.close();
-    print('Download complete: $savePath (${totalDownloaded / (1024 * 1024)} MB)');
+    });
+
+    return completer.future;
   }
 
   // ── Search ─────────────────────────────────────────────────────────────────
@@ -120,9 +71,6 @@ class YoutubeService {
     print('[YT] searching: "$query"');
     final results = await _yt.search.searchContent(query.trim());
     print('[YT] raw results: ${results.length} items');
-    for (final r in results.take(5)) {
-      print('[YT]   type=${r.runtimeType}  value=$r');
-    }
     final songs = results.whereType<SearchVideo>().take(limit).map(_videoToSong).toList();
     print('[YT] mapped songs: ${songs.length}');
     return songs;
@@ -137,10 +85,9 @@ class YoutubeService {
   // ── Mapper & Helpers ───────────────────────────────────────────────────────
 
   Song _videoToSong(SearchVideo v) {
-    final parts = v.title.split(' - ');
+    final parts  = v.title.split(' - ');
     final title  = parts.length >= 2 ? parts.sublist(1).join(' - ').trim() : v.title;
     final artist = parts.length >= 2 ? parts[0].trim() : v.author;
-
     return Song(
       youtubeVideoId:  v.id.value,
       title:           title,
@@ -162,8 +109,5 @@ class YoutubeService {
     return 0;
   }
 
-  void dispose() {
-    _yt.close();
-    _dio.close();
-  }
+  void dispose() => _yt.close();
 }

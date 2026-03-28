@@ -1,13 +1,9 @@
 // lib/services/audio_service.dart
-//
-// Downloads audio from YouTube using youtube_explode_dart, caches it locally,
-// then plays via just_audio (or audioplayers). Shows download progress.
 
 import 'dart:async';
 import 'dart:io';
+import 'package:audioplayers/audioplayers.dart';
 import 'package:path_provider/path_provider.dart';
-import 'package:just_audio/just_audio.dart';
-
 import '../models/song.dart';
 import '../db/hive_helper.dart';
 import '../services/youtube_service.dart';
@@ -19,8 +15,8 @@ enum GizaPlayerStatus { idle, downloading, loading, playing, paused, ended, erro
 class GizaPlayerState {
   final GizaPlayerStatus status;
   final bool playing;
-  final double? downloadProgress; // 0.0 to 1.0 during download
-  
+  final double? downloadProgress;
+
   const GizaPlayerState({
     required this.status,
     required this.playing,
@@ -34,8 +30,8 @@ class AudioService {
   AudioService._();
   static final AudioService instance = AudioService._();
 
-  final _player = AudioPlayer();
-  final _db = HiveHelper.instance;
+  final _player    = AudioPlayer();
+  final _db        = HiveHelper.instance;
   final _ytService = YoutubeService.instance;
 
   Song?   _currentSong;
@@ -51,8 +47,8 @@ class AudioService {
   final _durationCtrl = StreamController<Duration?>.broadcast();
 
   Stream<GizaPlayerState> get playerStateStream => _stateCtrl.stream;
-  Stream<Duration>         get positionStream    => _positionStream;
-  Stream<Duration?>        get durationStream    => _durationStream;
+  Stream<Duration>         get positionStream    => _positionCtrl.stream;
+  Stream<Duration?>        get durationStream    => _durationCtrl.stream;
   Stream<bool>             get playingStream     => playerStateStream.map((s) => s.playing);
 
   bool      _playing  = false;
@@ -63,41 +59,26 @@ class AudioService {
   Duration  get position  => _position;
   Duration? get duration  => _duration;
 
-  // Listen to player streams
-  Stream<Duration> get _positionStream => _player.positionStream;
-  Stream<Duration?> get _durationStream => _player.durationStream;
-
   // ── Initialization ─────────────────────────────────────────────────────────
 
   void init() {
-    // Listen to player state changes
-    _player.playerStateStream.listen((state) {
-      _playing = state.playing;
-      
-      switch (state.processingState) {
-        case ProcessingState.idle:
-          _emit(GizaPlayerStatus.idle);
-          break;
-        case ProcessingState.loading:
-        case ProcessingState.buffering:
-          _emit(GizaPlayerStatus.loading);
-          break;
-        case ProcessingState.ready:
-          _emit(_playing ? GizaPlayerStatus.playing : GizaPlayerStatus.paused);
-          break;
-        case ProcessingState.completed:
-          _emit(GizaPlayerStatus.ended);
-          break;
+    _player.onPlayerStateChanged.listen((state) {
+      _playing = state == PlayerState.playing;
+      switch (state) {
+        case PlayerState.playing:   _emit(GizaPlayerStatus.playing); break;
+        case PlayerState.paused:    _emit(GizaPlayerStatus.paused);  break;
+        case PlayerState.stopped:   _emit(GizaPlayerStatus.idle);    break;
+        case PlayerState.completed: _emit(GizaPlayerStatus.ended);   break;
+        case PlayerState.disposed:  break;
       }
     });
 
-    // Listen to position and duration
-    _player.positionStream.listen((pos) {
+    _player.onPositionChanged.listen((pos) {
       _position = pos;
       _positionCtrl.add(pos);
     });
 
-    _player.durationStream.listen((dur) {
+    _player.onDurationChanged.listen((dur) {
       _duration = dur;
       _durationCtrl.add(dur);
     });
@@ -105,31 +86,21 @@ class AudioService {
 
   // ── Play ───────────────────────────────────────────────────────────────────
 
-  /// Downloads the song if not cached, then plays it
   Future<void> play(Song song) async {
-    _currentSong = song;
+    _currentSong    = song;
     _currentVideoId = song.youtubeVideoId;
-    
+
     try {
-      // Check if already downloaded
-      String? localPath = await _getLocalPath(song);
-      
+      final localPath = _getCachedPath(song);
+
       if (localPath != null && File(localPath).existsSync()) {
-        // Already downloaded, play directly
         print('Playing from cache: $localPath');
         await _playFromFile(localPath);
-        
-        // Log play in database
-        if (song.youtubeVideoId != null) {
-          final saved = _db.getSongByVideoId(song.youtubeVideoId!);
-          if (saved != null) {
-            _db.logPlay(saved).catchError((_) {});
-          }
-        }
       } else {
-        // Need to download first
         await _downloadAndPlay(song);
       }
+
+      _logPlay(song);
     } catch (e) {
       print('Playback error: $e');
       _emit(GizaPlayerStatus.error);
@@ -140,139 +111,80 @@ class AudioService {
   // ── Download & Play ────────────────────────────────────────────────────────
 
   Future<void> _downloadAndPlay(Song song) async {
-    if (song.youtubeVideoId == null) {
-      throw Exception('No video ID for song');
-    }
+    if (song.youtubeVideoId == null) throw Exception('No video ID for song');
 
     _emit(GizaPlayerStatus.downloading, downloadProgress: 0.0);
 
-    try {
-      // Get audio stream URL
-      final audioUrl = await _ytService.getBestAudioStreamLikeYtDlp(song.youtubeVideoId!);
-      if (audioUrl == null) {
-        throw Exception('Could not get audio stream URL');
-      }
+    final appDir   = await getApplicationDocumentsDirectory();
+    final musicDir = Directory('${appDir.path}/music');
+    if (!musicDir.existsSync()) await musicDir.create(recursive: true);
 
-      // Prepare local file path
-      final appDir = await getApplicationDocumentsDirectory();
-      final musicDir = Directory('${appDir.path}/music');
-      if (!musicDir.existsSync()) {
-        await musicDir.create(recursive: true);
-      }
+    final savePath = await _ytService.downloadAudio(
+      song.youtubeVideoId!,
+      musicDir.path,
+      onProgress: (p) => _emit(GizaPlayerStatus.downloading, downloadProgress: p),
+    );
 
-      final fileName = '${song.youtubeVideoId}.webm'; // or .m4a depending on format
-      final savePath = '${musicDir.path}/$fileName';
-
-      // Download with progress
-      print('Downloading: $audioUrl -> $savePath');
-      await _downloadWithProgress(audioUrl, savePath, (progress) {
-        _emit(GizaPlayerStatus.downloading, downloadProgress: progress);
-      });
-
-      print('Download complete: $savePath');
-
-      // Update song in database with local path
-      final updatedSong = song.copyWith(
-        isDownloaded: true,
-        localPath: savePath,
-      );
-      await _db.saveSong(updatedSong);
-      _currentSong = updatedSong;
-
-      // Log play
-      if (song.youtubeVideoId != null) {
-        final saved = _db.getSongByVideoId(song.youtubeVideoId!);
-        if (saved != null) {
-          _db.logPlay(saved).catchError((_) {});
-        }
-      }
-
-      // Play the downloaded file
-      await _playFromFile(savePath);
-    } catch (e) {
-      print('Download/Play error: $e');
-      _emit(GizaPlayerStatus.error);
-      rethrow;
+    if (!File(savePath).existsSync() || File(savePath).lengthSync() == 0) {
+      throw Exception('Downloaded file is empty or missing');
     }
-  }
 
-  Future<void> _downloadWithProgress(
-    String url,
-    String savePath,
-    Function(double) onProgress,
-  ) async {
-    await _ytService.downloadInFragments(url, savePath, onProgress: onProgress);
+    final updatedSong = song.copyWith(isDownloaded: true, localPath: savePath);
+    await _db.saveSong(updatedSong);
+    _currentSong = updatedSong;
+
+    await _playFromFile(savePath);
   }
 
   // ── Play from file ─────────────────────────────────────────────────────────
 
   Future<void> _playFromFile(String filePath) async {
     _emit(GizaPlayerStatus.loading);
-    
-    await _player.setFilePath(filePath);
-    await _player.play();
-    
-    _playing = true;
-    _emit(GizaPlayerStatus.playing);
+    await _player.play(DeviceFileSource(filePath));
   }
 
   // ── Controls ───────────────────────────────────────────────────────────────
 
-  Future<void> resume() async {
-    await _player.play();
-    _playing = true;
-    _emit(GizaPlayerStatus.playing);
-  }
-
-  Future<void> pause() async {
-    await _player.pause();
-    _playing = false;
-    _emit(GizaPlayerStatus.paused);
-  }
-
-  Future<void> stop() async {
-    await _player.stop();
-    _playing = false;
-    _emit(GizaPlayerStatus.idle);
-  }
-
-  Future<void> seek(Duration position) async {
-    await _player.seek(position);
-    _position = position;
-    _positionCtrl.add(position);
-  }
+  Future<void> resume()                async => _player.resume();
+  Future<void> pause()                 async => _player.pause();
+  Future<void> stop()                  async => _player.stop();
+  Future<void> seek(Duration position) async => _player.seek(position);
 
   Future<void> togglePlayPause() async {
-    if (_playing) {
-      await pause();
-    } else {
-      await resume();
-    }
+    if (_playing) await pause(); else await resume();
   }
 
   // ── Helpers ────────────────────────────────────────────────────────────────
 
-  Future<String?> _getLocalPath(Song song) async {
-    // First check if song has localPath set
-    if (song.isDownloaded && song.localPath != null) {
-      return song.localPath;
+  String? _getCachedPath(Song song) {
+    String? check(String? path) {
+      if (path == null || path.endsWith('.webm')) return null;
+      return File(path).existsSync() ? path : null;
     }
 
-    // Check in database
+    if (song.isDownloaded) {
+      final p = check(song.localPath);
+      if (p != null) return p;
+    }
+
     if (song.youtubeVideoId != null) {
       final saved = _db.getSongByVideoId(song.youtubeVideoId!);
-      if (saved != null && saved.isDownloaded && saved.localPath != null) {
-        return saved.localPath;
-      }
+      if (saved != null && saved.isDownloaded) return check(saved.localPath);
     }
 
     return null;
   }
 
+  void _logPlay(Song song) {
+    if (song.youtubeVideoId == null) return;
+    final saved = _db.getSongByVideoId(song.youtubeVideoId!);
+    if (saved != null) _db.logPlay(saved).catchError((_) {});
+  }
+
   void _emit(GizaPlayerStatus status, {double? downloadProgress}) {
     _stateCtrl.add(GizaPlayerState(
-      status:  status,
-      playing: status == GizaPlayerStatus.playing,
+      status:           status,
+      playing:          status == GizaPlayerStatus.playing,
       downloadProgress: downloadProgress,
     ));
   }

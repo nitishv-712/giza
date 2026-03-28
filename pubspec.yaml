@@ -25,9 +25,9 @@ dependencies:
 
   # ── UI / Images ──────────────────────────────────────────────────────────────
   cached_network_image: ^3.3.1
-  dio: ^5.9.2
   path_provider: ^2.1.5
-  just_audio: ^0.10.5
+  audioplayers: ^6.1.0
+  flutter_yt_dlp: ^0.2.2
 
 dev_dependencies:
   flutter_test:
