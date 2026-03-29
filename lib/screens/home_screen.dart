@@ -17,23 +17,26 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateMixin {
-  final _audioService = AudioService.instance;
+  final _audioService   = AudioService.instance;
   final _youtubeService = YoutubeService.instance;
-  final _db = HiveHelper.instance;
+  final _db             = HiveHelper.instance;
 
   late TabController _tabController;
   final _searchController = TextEditingController();
   Timer? _searchDebounce;
 
-  List<Song> _searchResults = [];
+  List<Song> _searchResults  = [];
   List<Song> _trendingTracks = [];
-  List<Song> _savedSongs = [];
-  List<Song> _favourites = [];
+  List<Song> _savedSongs     = [];
+  List<Song> _favourites     = [];
   List<Song> _recentlyPlayed = [];
 
-  bool _isSearching = false;
+  bool _isSearching     = false;
   bool _loadingTrending = false;
-  bool _loadingSaved = false;
+  bool _loadingSaved    = false;
+
+  // Video IDs currently being downloaded in the background
+  final Set<String> _downloading = {};
 
   @override
   void initState() {
@@ -56,15 +59,14 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
     } finally {
       if (mounted) setState(() => _loadingTrending = false);
     }
-
     _loadSavedData();
   }
 
   void _loadSavedData() {
     setState(() => _loadingSaved = true);
     try {
-      _savedSongs = _db.getAllSavedSongs();
-      _favourites = _db.getFavourites();
+      _savedSongs     = _db.getAllSavedSongs();
+      _favourites     = _db.getFavourites();
       _recentlyPlayed = _db.getRecentlyPlayed(limit: 20);
     } finally {
       setState(() => _loadingSaved = false);
@@ -73,13 +75,9 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
 
   Future<void> _performSearch(String query) async {
     if (query.trim().isEmpty) {
-      setState(() {
-        _searchResults = [];
-        _isSearching = false;
-      });
+      setState(() { _searchResults = []; _isSearching = false; });
       return;
     }
-
     setState(() => _isSearching = true);
     try {
       final results = await _youtubeService.searchTracks(query, limit: 30);
@@ -95,20 +93,22 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
     }
   }
 
-  Future<void> _playSong(Song song) async {
-    // Show loading dialog during download
+  // ── Tap → Stream via Python backend ───────────────────────────────────────
+
+  Future<void> _streamSong(Song song) async {
+    // Show a slim loading dialog while Kotlin/Python buffers the stream
     if (mounted) {
       showDialog(
         context: context,
         barrierDismissible: false,
-        builder: (context) => _DownloadProgressDialog(song: song),
+        builder: (_) => _StreamLoadingDialog(song: song),
       );
     }
 
     try {
-      await _audioService.play(song);
+      await _audioService.stream(song);
       if (mounted) {
-        Navigator.of(context).pop(); // Close loading dialog
+        Navigator.of(context).pop(); // close loading dialog
         Navigator.push(
           context,
           MaterialPageRoute(builder: (_) => const PlayScreen()),
@@ -116,12 +116,67 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
       }
     } catch (e) {
       if (mounted) {
-        Navigator.of(context).pop(); // Close loading dialog
+        Navigator.of(context).pop();
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Stream error: $e')),
+        );
+      }
+    }
+  }
+
+  Future<void> _play(Song song) async {
+    try {
+      await _audioService.play(song);
+    } catch (e) {
+      if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Playback error: $e')),
         );
       }
     }
+  }
+  // ── Download button → background permanent save ────────────────────────────
+
+  Future<void> _downloadSong(Song song) async {
+    final id = song.youtubeVideoId;
+    if (id == null) return;
+
+    final existing = _db.getSongByVideoId(id);
+    if (existing != null && existing.isDownloaded) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Already downloaded'),
+          duration: Duration(seconds: 1),
+        ),
+      );
+      return;
+    }
+
+    setState(() => _downloading.add(id));
+
+    _audioService.downloadOnly(
+      song,
+      onDone: (saved) {
+        if (mounted) {
+          setState(() => _downloading.remove(id));
+          _loadSavedData();
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('"${saved.title}" downloaded'),
+              duration: const Duration(seconds: 2),
+            ),
+          );
+        }
+      },
+      onError: (e) {
+        if (mounted) {
+          setState(() => _downloading.remove(id));
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Download failed: $e')),
+          );
+        }
+      },
+    );
   }
 
   Future<void> _toggleFavourite(Song song) async {
@@ -149,22 +204,17 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
     super.dispose();
   }
 
+  // ── Build ──────────────────────────────────────────────────────────────────
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       body: SafeArea(
         child: Column(
           children: [
-            // Header
             _buildHeader(),
-
-            // Search bar
             _buildSearchBar(),
-
-            // Tabs
             _buildTabBar(),
-
-            // Content
             Expanded(
               child: TabBarView(
                 controller: _tabController,
@@ -176,8 +226,6 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
                 ],
               ),
             ),
-
-            // Mini player
             _buildMiniPlayer(),
           ],
         ),
@@ -229,7 +277,10 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
           onChanged: (value) {
             setState(() {});
             _searchDebounce?.cancel();
-            _searchDebounce = Timer(const Duration(milliseconds: 500), () => _performSearch(value));
+            _searchDebounce = Timer(
+              const Duration(milliseconds: 500),
+              () => _performSearch(value),
+            );
           },
           style: const TextStyle(color: Color(0xFFECECFF)),
           decoration: InputDecoration(
@@ -248,7 +299,6 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
             border: InputBorder.none,
             contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
           ),
-
         ),
       ),
     );
@@ -279,47 +329,46 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
         songs: _searchResults,
         loading: _isSearching,
         emptyMessage: 'No results found',
+        play: false,
       );
     }
-
     return _buildSongList(
       songs: _trendingTracks,
       loading: _loadingTrending,
       emptyMessage: 'No trending tracks available',
       title: 'Trending Now',
+      play: false,
     );
   }
 
-  Widget _buildLibraryTab() {
-    return _buildSongList(
-      songs: _savedSongs,
-      loading: _loadingSaved,
-      emptyMessage: 'No saved songs yet',
-      showActions: true,
-    );
-  }
+  Widget _buildLibraryTab() => _buildSongList(
+        songs: _savedSongs,
+        loading: _loadingSaved,
+        emptyMessage: 'No saved songs yet',
+        showActions: true,
+        play: true,
+      );
 
-  Widget _buildFavouritesTab() {
-    return _buildSongList(
-      songs: _favourites,
-      loading: false,
-      emptyMessage: 'No favourites yet',
-      showActions: true,
-    );
-  }
+  Widget _buildFavouritesTab() => _buildSongList(
+        songs: _favourites,
+        loading: false,
+        emptyMessage: 'No favourites yet',
+        showActions: true,
+        play: false,
+      );
 
-  Widget _buildRecentTab() {
-    return _buildSongList(
-      songs: _recentlyPlayed,
-      loading: false,
-      emptyMessage: 'No recently played songs',
-    );
-  }
+  Widget _buildRecentTab() => _buildSongList(
+        songs: _recentlyPlayed,
+        loading: false,
+        emptyMessage: 'No recently played songs',
+        play: false,
+      );
 
   Widget _buildSongList({
     required List<Song> songs,
     required bool loading,
     required String emptyMessage,
+    required bool play,
     String? title,
     bool showActions = false,
   }) {
@@ -328,24 +377,18 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
         child: CircularProgressIndicator(color: Color(0xFF00E5FF)),
       );
     }
-
     if (songs.isEmpty) {
       return Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(
-              Icons.music_off,
-              size: 64,
-              color: const Color(0xFFECECFF).withOpacity(0.3),
-            ),
+            Icon(Icons.music_off, size: 64,
+                color: const Color(0xFFECECFF).withOpacity(0.3)),
             const SizedBox(height: 16),
             Text(
               emptyMessage,
               style: TextStyle(
-                color: const Color(0xFFECECFF).withOpacity(0.6),
-                fontSize: 16,
-              ),
+                  color: const Color(0xFFECECFF).withOpacity(0.6), fontSize: 16),
             ),
           ],
         ),
@@ -359,24 +402,27 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
         if (title != null && index == 0) {
           return Padding(
             padding: const EdgeInsets.only(bottom: 12, top: 8),
-            child: Text(
-              title,
-              style: const TextStyle(
-                fontSize: 20,
-                fontWeight: FontWeight.bold,
-                color: Color(0xFFECECFF),
-              ),
-            ),
+            child: Text(title,
+                style: const TextStyle(
+                    fontSize: 20,
+                    fontWeight: FontWeight.bold,
+                    color: Color(0xFFECECFF))),
           );
         }
-
         final song = songs[title != null ? index - 1 : index];
-        return _buildSongTile(song, showActions: showActions);
+        return _buildSongTile(song, showActions: showActions, play: play);
       },
     );
   }
 
-  Widget _buildSongTile(Song song, {bool showActions = false}) {
+  // ── Song tile ──────────────────────────────────────────────────────────────
+
+  Widget _buildSongTile(Song song, {bool showActions = false, bool play = false}) {
+    final videoId       = song.youtubeVideoId ?? '';
+    final isDownloaded  = song.isDownloaded ||
+        (_db.getSongByVideoId(videoId)?.isDownloaded ?? false);
+    final isDownloading = _downloading.contains(videoId);
+
     return Container(
       margin: const EdgeInsets.only(bottom: 8),
       decoration: BoxDecoration(
@@ -384,40 +430,29 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
         borderRadius: BorderRadius.circular(12),
       ),
       child: ListTile(
-        onTap: () => _playSong(song),
+        onTap: () => play? _play(song) :_streamSong(song),   // tap always streams
         leading: ClipRRect(
           borderRadius: BorderRadius.circular(8),
           child: Image.network(
             song.artworkUrl,
-            width: 56,
-            height: 56,
-            fit: BoxFit.cover,
+            width: 56, height: 56, fit: BoxFit.cover,
             errorBuilder: (_, __, ___) => Container(
-              width: 56,
-              height: 56,
+              width: 56, height: 56,
               color: const Color(0xFF080810),
               child: const Icon(Icons.music_note, color: Color(0xFF00E5FF)),
             ),
           ),
         ),
-        title: Text(
-          song.title,
-          style: const TextStyle(
-            color: Color(0xFFECECFF),
-            fontWeight: FontWeight.w600,
-          ),
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-        ),
-        subtitle: Text(
-          song.artist,
-          style: TextStyle(
-            color: const Color(0xFFECECFF).withOpacity(0.7),
-            fontSize: 13,
-          ),
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-        ),
+        title: Text(song.title,
+            style: const TextStyle(
+                color: Color(0xFFECECFF), fontWeight: FontWeight.w600),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis),
+        subtitle: Text(song.artist,
+            style: TextStyle(
+                color: const Color(0xFFECECFF).withOpacity(0.7), fontSize: 13),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis),
         trailing: showActions
             ? Row(
                 mainAxisSize: MainAxisSize.min,
@@ -435,66 +470,102 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
                   ),
                 ],
               )
-            : Text(
-                song.durationFormatted,
-                style: TextStyle(
-                  color: const Color(0xFFECECFF).withOpacity(0.6),
-                  fontSize: 13,
-                ),
+            : Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    song.durationFormatted,
+                    style: TextStyle(
+                        color: const Color(0xFFECECFF).withOpacity(0.6),
+                        fontSize: 13),
+                  ),
+                  const SizedBox(width: 4),
+                  _buildDownloadButton(
+                    videoId: videoId,
+                    song: song,
+                    isDownloaded: isDownloaded,
+                    isDownloading: isDownloading,
+                  ),
+                ],
               ),
       ),
     );
   }
 
+  Widget _buildDownloadButton({
+    required String videoId,
+    required Song song,
+    required bool isDownloaded,
+    required bool isDownloading,
+  }) {
+    if (videoId.isEmpty) return const SizedBox.shrink();
+
+    if (isDownloading) {
+      return const SizedBox(
+        width: 24, height: 24,
+        child: CircularProgressIndicator(
+            strokeWidth: 2, color: Color(0xFF00E5FF)),
+      );
+    }
+
+    return IconButton(
+      tooltip: isDownloaded ? 'Downloaded' : 'Download for offline',
+      padding: EdgeInsets.zero,
+      constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+      icon: Icon(
+        isDownloaded ? Icons.download_done : Icons.download_outlined,
+        size: 22,
+        color: isDownloaded
+            ? const Color(0xFF00E5FF)
+            : const Color(0xFFECECFF).withOpacity(0.6),
+      ),
+      onPressed: isDownloaded ? null : () => _downloadSong(song),
+    );
+  }
+
+  // ── Mini player ────────────────────────────────────────────────────────────
+
   Widget _buildMiniPlayer() {
     return StreamBuilder<Song?>(
-      stream: Stream.periodic(const Duration(milliseconds: 100), (_) => _audioService.currentSong),
+      stream: Stream.periodic(
+          const Duration(milliseconds: 100), (_) => _audioService.currentSong),
       initialData: _audioService.currentSong,
       builder: (context, snapshot) {
         final song = snapshot.data;
         if (song == null) return const SizedBox.shrink();
 
         return GestureDetector(
-          onTap: () {
-            Navigator.push(
-              context,
-              MaterialPageRoute(builder: (_) => const PlayScreen()),
-            ).then((_) => _loadSavedData());
-          },
+          onTap: () => Navigator.push(
+            context,
+            MaterialPageRoute(builder: (_) => const PlayScreen()),
+          ).then((_) => _loadSavedData()),
           child: Container(
             height: 72,
             decoration: BoxDecoration(
               color: const Color(0xFF18182A),
               boxShadow: [
                 BoxShadow(
-                  color: Colors.black.withOpacity(0.3),
-                  blurRadius: 8,
-                  offset: const Offset(0, -2),
-                ),
+                    color: Colors.black.withOpacity(0.3),
+                    blurRadius: 8,
+                    offset: const Offset(0, -2)),
               ],
             ),
             child: Row(
               children: [
                 // Artwork
                 ClipRRect(
-                  borderRadius: const BorderRadius.only(
-                    bottomLeft: Radius.circular(0),
-                  ),
                   child: Image.network(
                     song.artworkUrl,
-                    width: 72,
-                    height: 72,
-                    fit: BoxFit.cover,
+                    width: 72, height: 72, fit: BoxFit.cover,
                     errorBuilder: (_, __, ___) => Container(
-                      width: 72,
-                      height: 72,
+                      width: 72, height: 72,
                       color: const Color(0xFF080810),
                       child: const Icon(Icons.music_note, color: Color(0xFF00E5FF)),
                     ),
                   ),
                 ),
 
-                // Song info
+                // Song info + streaming badge
                 Expanded(
                   child: Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 12),
@@ -502,43 +573,48 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
                       mainAxisAlignment: MainAxisAlignment.center,
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(
-                          song.title,
-                          style: const TextStyle(
-                            color: Color(0xFFECECFF),
-                            fontWeight: FontWeight.w600,
-                            fontSize: 14,
-                          ),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                        const SizedBox(height: 4),
-                        Text(
-                          song.artist,
-                          style: TextStyle(
-                            color: const Color(0xFFECECFF).withOpacity(0.7),
-                            fontSize: 12,
-                          ),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
+                        Text(song.title,
+                            style: const TextStyle(
+                                color: Color(0xFFECECFF),
+                                fontWeight: FontWeight.w600,
+                                fontSize: 14),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis),
+                        const SizedBox(height: 3),
+                        if (_audioService.isStreaming)
+                          Row(
+                            children: [
+                              Icon(Icons.wifi, size: 11,
+                                  color: const Color(0xFF00E5FF).withOpacity(0.8)),
+                              const SizedBox(width: 3),
+                              Text('Streaming',
+                                  style: TextStyle(
+                                      color: const Color(0xFF00E5FF).withOpacity(0.8),
+                                      fontSize: 11)),
+                            ],
+                          )
+                        else
+                          Text(song.artist,
+                              style: TextStyle(
+                                  color: const Color(0xFFECECFF).withOpacity(0.7),
+                                  fontSize: 12),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis),
                       ],
                     ),
                   ),
                 ),
 
-                // Play/Pause button
+                // Play / Pause
                 StreamBuilder<bool>(
                   stream: _audioService.playingStream,
                   initialData: _audioService.isPlaying,
-                  builder: (context, snapshot) {
-                    final playing = snapshot.data ?? false;
+                  builder: (context, snap) {
+                    final playing = snap.data ?? false;
                     return IconButton(
                       icon: Icon(
-                        playing ? Icons.pause : Icons.play_arrow,
-                        color: const Color(0xFF00E5FF),
-                        size: 32,
-                      ),
+                          playing ? Icons.pause : Icons.play_arrow,
+                          color: const Color(0xFF00E5FF), size: 32),
                       onPressed: _audioService.togglePlayPause,
                     );
                   },
@@ -554,12 +630,12 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
   }
 }
 
-// ── Download Progress Dialog ───────────────────────────────────────────────
+// ── Stream loading dialog ──────────────────────────────────────────────────────
+// Shown while Kotlin/Python buffers the audio stream into a temp file.
 
-class _DownloadProgressDialog extends StatelessWidget {
+class _StreamLoadingDialog extends StatelessWidget {
   final Song song;
-
-  const _DownloadProgressDialog({required this.song});
+  const _StreamLoadingDialog({required this.song});
 
   @override
   Widget build(BuildContext context) {
@@ -571,102 +647,56 @@ class _DownloadProgressDialog extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            // Album art
+            // Artwork
             ClipRRect(
               borderRadius: BorderRadius.circular(12),
               child: Image.network(
                 song.artworkUrl,
-                width: 120,
-                height: 120,
-                fit: BoxFit.cover,
+                width: 100, height: 100, fit: BoxFit.cover,
                 errorBuilder: (_, __, ___) => Container(
-                  width: 120,
-                  height: 120,
+                  width: 100, height: 100,
                   color: const Color(0xFF080810),
-                  child: const Icon(Icons.music_note, size: 60, color: Color(0xFF00E5FF)),
+                  child: const Icon(Icons.music_note, size: 48,
+                      color: Color(0xFF00E5FF)),
                 ),
               ),
             ),
-            
-            const SizedBox(height: 20),
-            
-            // Song info
-            Text(
-              song.title,
-              style: const TextStyle(
-                fontSize: 16,
-                fontWeight: FontWeight.bold,
-                color: Color(0xFFECECFF),
-              ),
-              textAlign: TextAlign.center,
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-            ),
-            
+            const SizedBox(height: 16),
+
+            Text(song.title,
+                style: const TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.bold,
+                    color: Color(0xFFECECFF)),
+                textAlign: TextAlign.center,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis),
             const SizedBox(height: 4),
-            
-            Text(
-              song.artist,
-              style: TextStyle(
-                fontSize: 14,
-                color: const Color(0xFFECECFF).withOpacity(0.7),
-              ),
-              textAlign: TextAlign.center,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
+            Text(song.artist,
+                style: TextStyle(
+                    fontSize: 13,
+                    color: const Color(0xFFECECFF).withOpacity(0.7)),
+                textAlign: TextAlign.center),
+            const SizedBox(height: 20),
+
+            // Indeterminate progress — Python is streaming + buffering
+            const LinearProgressIndicator(
+              backgroundColor: Color(0xFF080810),
+              valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF00E5FF)),
             ),
-            
-            const SizedBox(height: 24),
-            
-            // Progress indicator and status
-            StreamBuilder<GizaPlayerState>(
-              stream: AudioService.instance.playerStateStream,
-              builder: (context, snapshot) {
-                final state = snapshot.data;
-                final progress = state?.downloadProgress ?? 0.0;
-                final status = state?.status ?? GizaPlayerStatus.idle;
-                
-                String statusText;
-                switch (status) {
-                  case GizaPlayerStatus.downloading:
-                    statusText = 'Downloading... ${(progress * 100).toInt()}%';
-                    break;
-                  case GizaPlayerStatus.loading:
-                    statusText = 'Loading...';
-                    break;
-                  case GizaPlayerStatus.playing:
-                    statusText = 'Ready to play';
-                    break;
-                  default:
-                    statusText = 'Preparing...';
-                }
-                
-                return Column(
-                  children: [
-                    if (status == GizaPlayerStatus.downloading)
-                      LinearProgressIndicator(
-                        value: progress,
-                        backgroundColor: const Color(0xFF080810),
-                        valueColor: const AlwaysStoppedAnimation<Color>(Color(0xFF00E5FF)),
-                      )
-                    else
-                      const LinearProgressIndicator(
-                        backgroundColor: Color(0xFF080810),
-                        valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF00E5FF)),
-                      ),
-                    
-                    const SizedBox(height: 12),
-                    
-                    Text(
-                      statusText,
-                      style: TextStyle(
+            const SizedBox(height: 10),
+
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(Icons.wifi, size: 13,
+                    color: const Color(0xFF00E5FF).withOpacity(0.7)),
+                const SizedBox(width: 6),
+                Text('Buffering stream…',
+                    style: TextStyle(
                         fontSize: 13,
-                        color: const Color(0xFFECECFF).withOpacity(0.7),
-                      ),
-                    ),
-                  ],
-                );
-              },
+                        color: const Color(0xFFECECFF).withOpacity(0.6))),
+              ],
             ),
           ],
         ),
