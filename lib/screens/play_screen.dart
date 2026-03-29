@@ -385,11 +385,17 @@ class _PlayScreenState extends State<PlayScreen> with SingleTickerProviderStateM
   // ── Controls ───────────────────────────────────────────────────────────────
 
   Widget _buildControls() {
-    return StreamBuilder<bool>(
-      stream: _audioService.playingStream,
-      initialData: _audioService.isPlaying,
+    return StreamBuilder<GizaPlayerState>(
+      stream: _audioService.playerStateStream,
       builder: (context, snapshot) {
-        final isPlaying = snapshot.data ?? false;
+        final state = snapshot.data;
+        final status = state?.status ?? GizaPlayerStatus.idle;
+        final isPlaying = state?.playing ?? false;
+        final isShuffle = state?.isShuffle ?? false;
+        final isRepeat = state?.isRepeat ?? false;
+
+        final showLoader = status == GizaPlayerStatus.downloading || 
+                           status == GizaPlayerStatus.loading;
 
         return Padding(
           padding: const EdgeInsets.symmetric(horizontal: 8.0),
@@ -399,17 +405,17 @@ class _PlayScreenState extends State<PlayScreen> with SingleTickerProviderStateM
               _controlBtn(
                 size: 44,
                 icon: Icons.shuffle,
-                color: const Color(0xFFECECFF).withOpacity(0.5),
-                onPressed: () {},
+                color: isShuffle ? const Color(0xFF00E5FF) : const Color(0xFFECECFF).withOpacity(0.5),
+                onPressed: _audioService.toggleShuffle,
               ),
               _controlBtn(
                 size: 52,
                 icon: Icons.skip_previous,
                 iconSize: 28,
-                onPressed: () {},
+                onPressed: _audioService.previous,
               ),
 
-              // Play / Pause — gradient button
+              // Play / Pause / Loading Container
               Container(
                 width: 68, height: 68,
                 decoration: BoxDecoration(
@@ -423,24 +429,32 @@ class _PlayScreenState extends State<PlayScreen> with SingleTickerProviderStateM
                     ),
                   ],
                 ),
-                child: IconButton(
-                  icon: Icon(isPlaying ? Icons.pause : Icons.play_arrow, size: 36),
-                  color: Colors.white,
-                  onPressed: _audioService.togglePlayPause,
-                ),
+                child: showLoader
+                    ? const Padding(
+                        padding: EdgeInsets.all(16.0),
+                        child: CircularProgressIndicator(
+                          color: Colors.white,
+                          strokeWidth: 3,
+                        ),
+                      )
+                    : IconButton(
+                        icon: Icon(isPlaying ? Icons.pause : Icons.play_arrow, size: 36),
+                        color: Colors.white,
+                        onPressed: _audioService.togglePlayPause,
+                      ),
               ),
 
               _controlBtn(
                 size: 52,
                 icon: Icons.skip_next,
                 iconSize: 28,
-                onPressed: () {},
+                onPressed: _audioService.next,
               ),
               _controlBtn(
                 size: 44,
                 icon: Icons.repeat,
-                color: const Color(0xFFECECFF).withOpacity(0.5),
-                onPressed: () {},
+                color: isRepeat ? const Color(0xFF00E5FF) : const Color(0xFFECECFF).withOpacity(0.5),
+                onPressed: _audioService.toggleRepeat,
               ),
             ],
           ),

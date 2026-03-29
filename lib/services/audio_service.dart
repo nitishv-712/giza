@@ -2,6 +2,7 @@
 
 import 'dart:async';
 import 'dart:io';
+import 'dart:math';
 import 'package:audioplayers/audioplayers.dart';
 import 'package:path_provider/path_provider.dart';
 import '../models/song.dart';
@@ -16,11 +17,15 @@ class GizaPlayerState {
   final GizaPlayerStatus status;
   final bool playing;
   final double? downloadProgress;
+  final bool isShuffle;
+  final bool isRepeat;
 
   const GizaPlayerState({
     required this.status,
     required this.playing,
     this.downloadProgress,
+    this.isShuffle = false,
+    this.isRepeat = false,
   });
 }
 
@@ -40,9 +45,17 @@ class AudioService {
   String? _currentVideoId;
   String? get currentVideoId => _currentVideoId;
 
-  // True while playing a stream (not a permanently downloaded file).
   bool _isStreaming = false;
   bool get isStreaming => _isStreaming;
+
+  // Queue Management
+  List<Song> _playlist = [];
+  int _currentIndex = -1;
+  bool _isShuffle = false;
+  bool _isRepeat = false;
+
+  bool get isShuffle => _isShuffle;
+  bool get isRepeat => _isRepeat;
 
   // ── Streams ────────────────────────────────────────────────────────────────
 
@@ -72,7 +85,14 @@ class AudioService {
         case PlayerState.playing:   _emit(GizaPlayerStatus.playing); break;
         case PlayerState.paused:    _emit(GizaPlayerStatus.paused);  break;
         case PlayerState.stopped:   _emit(GizaPlayerStatus.idle);    break;
-        case PlayerState.completed: _emit(GizaPlayerStatus.ended);   break;
+        case PlayerState.completed: 
+          _emit(GizaPlayerStatus.ended);
+          if (_isRepeat) {
+            resume();
+          } else {
+            next();
+          }
+          break;
         case PlayerState.disposed:  break;
       }
     });
@@ -88,49 +108,26 @@ class AudioService {
     });
   }
 
-  // ── Stream (Kotlin → Python stream_audio → local temp file) ───────────────
+  // ── Playlist Management ────────────────────────────────────────────────────
 
-  /// Streams [song]. If the song is already downloaded, plays the local file instead.
-  Future<void> stream(Song song) async {
-    _currentSong    = song;
-    _currentVideoId = song.youtubeVideoId;
-
-    // 1. Check if we already have it locally
-    final localPath = _getCachedPath(song);
-    if (localPath != null && File(localPath).existsSync()) {
-      print('Song is downloaded. Playing from local storage instead of streaming.');
-      _isStreaming = false;
-      _emit(GizaPlayerStatus.loading);
-      await _player.play(DeviceFileSource(localPath));
-      _emit(GizaPlayerStatus.playing);
-      _logPlay(song);
-      return;
-    }
-
-    // 2. Otherwise, start streaming
-    _isStreaming = true;
-    try {
-      if (song.youtubeVideoId == null) throw Exception('No video ID for song');
-      _emit(GizaPlayerStatus.loading);
-      
-      final tempPath = await _ytService.getStreamUrl(song.youtubeVideoId!);
-      
-      await _player.play(DeviceFileSource(tempPath));
-      
-      _emit(GizaPlayerStatus.playing);
-      _logPlay(song);
-      
-    } catch (e) {
-      print('Stream error: $e');
-      _emit(GizaPlayerStatus.error);
-      rethrow;
-    }
+  void setPlaylist(List<Song> songs, {int initialIndex = 0}) {
+    _playlist = List.from(songs);
+    _currentIndex = initialIndex;
   }
 
-  // ── Play (check cache → download via Kotlin/Python → play) ────────────────
+  // ── Playback Controls ──────────────────────────────────────────────────────
 
-  /// Plays [song], downloading it permanently first if not already cached.
-  Future<void> play(Song song) async {
+  Future<void> play(Song song, {List<Song>? playlist}) async {
+    if (playlist != null) {
+      _playlist = List.from(playlist);
+      _currentIndex = _playlist.indexWhere((s) => s.youtubeVideoId == song.youtubeVideoId);
+    } else if (!_playlist.any((s) => s.youtubeVideoId == song.youtubeVideoId)) {
+      _playlist = [song];
+      _currentIndex = 0;
+    } else {
+      _currentIndex = _playlist.indexWhere((s) => s.youtubeVideoId == song.youtubeVideoId);
+    }
+
     _currentSong    = song;
     _currentVideoId = song.youtubeVideoId;
     _isStreaming    = false;
@@ -139,7 +136,6 @@ class AudioService {
       final localPath = _getCachedPath(song);
 
       if (localPath != null && File(localPath).existsSync()) {
-        print('Playing from cache: $localPath');
         _emit(GizaPlayerStatus.loading);
         await _player.play(DeviceFileSource(localPath));
       } else {
@@ -154,10 +150,46 @@ class AudioService {
     }
   }
 
-  // ── Background download (no playback change) ──────────────────────────────
+  Future<void> next() async {
+    if (_playlist.isEmpty) return;
 
-  /// Downloads [song] permanently in the background without affecting the
-  /// current playback. Calls [onDone] with the updated Song on success.
+    if (_isShuffle) {
+      _currentIndex = Random().nextInt(_playlist.length);
+    } else {
+      _currentIndex = (_currentIndex + 1) % _playlist.length;
+    }
+
+    await play(_playlist[_currentIndex]);
+  }
+
+  Future<void> previous() async {
+    if (_playlist.isEmpty) return;
+
+    if (_position.inSeconds > 3) {
+      await seek(Duration.zero);
+      return;
+    }
+
+    _currentIndex = (_currentIndex - 1) % _playlist.length;
+    if (_currentIndex < 0) _currentIndex = _playlist.length - 1;
+
+    await play(_playlist[_currentIndex]);
+  }
+
+  void toggleShuffle() {
+    _isShuffle = !_isShuffle;
+    _emit(_playing ? GizaPlayerStatus.playing : GizaPlayerStatus.paused);
+  }
+
+  void toggleRepeat() {
+    _isRepeat = !_isRepeat;
+    _emit(_playing ? GizaPlayerStatus.playing : GizaPlayerStatus.paused);
+  }
+
+  Future<void> stream(Song song) => play(song);
+
+  // ── Background download ────────────────────────────────────────────────────
+
   Future<void> downloadOnly(
     Song song, {
     void Function(double)? onProgress,
@@ -174,7 +206,6 @@ class AudioService {
       final musicDir = Directory('${appDir.path}/music');
       if (!musicDir.existsSync()) await musicDir.create(recursive: true);
 
-      // Calls Kotlin → Python; returns permanent save path
       final savePath = await _ytService.downloadAudio(
         song.youtubeVideoId!,
         musicDir.path,
@@ -188,11 +219,8 @@ class AudioService {
       final updatedSong = song.copyWith(isDownloaded: true, localPath: savePath);
       await _db.saveSong(updatedSong);
 
-      // Keep _currentSong in sync if this is the playing song
       if (_currentVideoId == song.youtubeVideoId) {
         _currentSong = updatedSong;
-        // If we were streaming, we're technically still playing the stream until next track,
-        // but now we know it's downloaded for the next time.
       }
 
       onDone?.call(updatedSong);
@@ -274,6 +302,8 @@ class AudioService {
       status:           status,
       playing:          status == GizaPlayerStatus.playing,
       downloadProgress: downloadProgress,
+      isShuffle:        _isShuffle,
+      isRepeat:         _isRepeat,
     ));
   }
 
