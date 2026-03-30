@@ -27,6 +27,17 @@ dependencies:
   cached_network_image: ^3.3.1
   path_provider: ^2.1.5
   audioplayers: ^6.1.0
+  provider: ^6.1.2
+
+  # ── Firebase ─────────────────────────────────────────────────────────────────
+  firebase_core: ^3.6.0
+  firebase_auth: ^5.3.1
+  google_sign_in: ^6.2.1
+  flutter_facebook_auth: ^7.1.1
+
+  # ── Background Audio ─────────────────────────────────────────────────────────
+  audio_service: ^0.18.15
+  audio_session: ^0.1.21
 
 dev_dependencies:
   flutter_test:

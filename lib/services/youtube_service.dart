@@ -13,7 +13,6 @@ class YoutubeService {
   static const _channel = MethodChannel('com.giza.app/youtube');
 
   // ── Search (youtube_explode_dart) ──────────────────────────────────────────
-
   Future<String?> getVideoIdFromQuery(String query) async {
     if (query.trim().isEmpty) return null;
     final results = await _yt.search.search(query.trim());

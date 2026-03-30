@@ -8,6 +8,7 @@ import 'package:path_provider/path_provider.dart';
 import '../models/song.dart';
 import '../db/hive_helper.dart';
 import '../services/youtube_service.dart';
+import '../services/notification_service.dart';
 
 // ── Playback state ────────────────────────────────────────────────────────────
 
@@ -38,6 +39,7 @@ class AudioService {
   final _player    = AudioPlayer();
   final _db        = HiveHelper.instance;
   final _ytService = YoutubeService.instance;
+  final _notificationService = NotificationService.instance;
 
   Song?   _currentSong;
   Song?   get currentSong => _currentSong;
@@ -79,6 +81,8 @@ class AudioService {
   // ── Initialization ─────────────────────────────────────────────────────────
 
   void init() {
+    _setupNotificationHandlers();
+    
     _player.onPlayerStateChanged.listen((state) {
       _playing = state == PlayerState.playing;
       switch (state) {
@@ -100,12 +104,35 @@ class AudioService {
     _player.onPositionChanged.listen((pos) {
       _position = pos;
       _positionCtrl.add(pos);
+      _updateNotification();
     });
 
     _player.onDurationChanged.listen((dur) {
       _duration = dur;
       _durationCtrl.add(dur);
+      _updateNotification();
     });
+  }
+
+  void _setupNotificationHandlers() {
+    _notificationService.setHandlers(
+      onPlay: () => resume(),
+      onPause: () => pause(),
+      onNext: () => next(),
+      onPrevious: () => previous(),
+      onSeek: (position) => seek(position),
+    );
+  }
+
+  void _updateNotification() {
+    if (_currentSong != null && _duration != null) {
+      _notificationService.updateNotification(
+        song: _currentSong!,
+        isPlaying: _playing,
+        position: _position,
+        duration: _duration!,
+      );
+    }
   }
 
   // ── Playlist Management ────────────────────────────────────────────────────
@@ -261,9 +288,20 @@ class AudioService {
 
   // ── Controls ───────────────────────────────────────────────────────────────
 
-  Future<void> resume()                async => _player.resume();
-  Future<void> pause()                 async => _player.pause();
-  Future<void> stop()                  async => _player.stop();
+  Future<void> resume()                async {
+    await _player.resume();
+    _updateNotification();
+  }
+  
+  Future<void> pause()                 async {
+    await _player.pause();
+    _updateNotification();
+  }
+  
+  Future<void> stop()                  async {
+    await _player.stop();
+    await _notificationService.clearNotification();
+  }
   Future<void> seek(Duration position) async => _player.seek(position);
 
   Future<void> togglePlayPause() async {

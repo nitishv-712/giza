@@ -2,11 +2,14 @@
 
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 
 import '../models/song.dart';
 import '../services/audio_service.dart';
 import '../services/youtube_service.dart';
 import '../db/hive_helper.dart';
+import '../providers/audio_provider.dart';
+import '../providers/auth_provider.dart';
 import 'play_screen.dart';
 
 class HomeScreen extends StatefulWidget {
@@ -95,10 +98,9 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
   // ── Playback Logic ─────────────────────────────────────────────────────────
 
   Future<void> _handlePlay(Song song, List<Song> playlist) async {
-    // 1. Set the playlist in the AudioService
+    final audioProvider = context.read<AudioProvider>();
     _audioService.setPlaylist(playlist);
 
-    // 2. Navigate immediately to PlayScreen
     if (mounted) {
       Navigator.push(
         context,
@@ -107,8 +109,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
     }
 
     try {
-      // 3. Start playback (AudioService handles downloading -> loading -> playing)
-      await _audioService.play(song);
+      await audioProvider.play(song);
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -225,6 +226,24 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
           ),
           const SizedBox(width: 12),
           const Text('Giza', style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: Color(0xFFECECFF))),
+          const Spacer(),
+          Consumer<AuthProvider>(
+            builder: (context, authProvider, _) {
+              return IconButton(
+                icon: authProvider.isLoading
+                    ? const SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: Color(0xFFECECFF),
+                        ),
+                      )
+                    : const Icon(Icons.logout, color: Color(0xFFECECFF)),
+                onPressed: authProvider.isLoading ? null : () => authProvider.signOut(),
+              );
+            },
+          ),
         ],
       ),
     );
@@ -346,11 +365,9 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
   }
 
   Widget _buildMiniPlayer() {
-    return StreamBuilder<Song?>(
-      stream: Stream.periodic(const Duration(milliseconds: 200), (_) => _audioService.currentSong),
-      initialData: _audioService.currentSong,
-      builder: (context, snapshot) {
-        final song = snapshot.data;
+    return Consumer<AudioProvider>(
+      builder: (context, audioProvider, _) {
+        final song = audioProvider.currentSong;
         if (song == null) return const SizedBox.shrink();
         return GestureDetector(
           onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const PlayScreen())).then((_) => _loadSavedData()),
@@ -363,10 +380,9 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
                 Text(song.title, style: const TextStyle(color: Color(0xFFECECFF), fontWeight: FontWeight.w600, fontSize: 14), maxLines: 1, overflow: TextOverflow.ellipsis),
                 Text(song.artist, style: TextStyle(color: const Color(0xFFECECFF).withOpacity(0.7), fontSize: 12), maxLines: 1, overflow: TextOverflow.ellipsis),
               ]))),
-              StreamBuilder<bool>(
-                stream: _audioService.playingStream,
-                initialData: _audioService.isPlaying,
-                builder: (context, snap) => IconButton(icon: Icon(snap.data == true ? Icons.pause : Icons.play_arrow, color: const Color(0xFF00E5FF), size: 32), onPressed: _audioService.togglePlayPause),
+              IconButton(
+                icon: Icon(audioProvider.isPlaying ? Icons.pause : Icons.play_arrow, color: const Color(0xFF00E5FF), size: 32),
+                onPressed: audioProvider.togglePlayPause,
               ),
               const SizedBox(width: 8),
             ]),

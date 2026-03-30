@@ -2,27 +2,40 @@
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:provider/provider.dart';
+import 'package:firebase_core/firebase_core.dart';
 
 import 'db/hive_helper.dart';
 import 'services/audio_service.dart';
+import 'services/auth_service.dart';
+import 'services/notification_service.dart';
+import 'providers/audio_provider.dart';
+import 'providers/auth_provider.dart';
 import 'screens/home_screen.dart';
+import 'screens/login_screen.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  // 1. Init Hive on-device storage
+  // 1. Init Firebase
+  await Firebase.initializeApp();
+
+  // 2. Init Hive on-device storage
   await HiveHelper.instance.init();
 
-  // 2. Init Audio Service
+  // 3. Init Notification Service
+  await NotificationService.instance.init();
+
+  // 4. Init Audio Service
   AudioService.instance.init();
 
-  // 3. Lock to portrait
+  // 5. Lock to portrait
   await SystemChrome.setPreferredOrientations([
     DeviceOrientation.portraitUp,
     DeviceOrientation.portraitDown,
   ]);
 
-  // 4. Dark system UI
+  // 6. Dark system UI
   SystemChrome.setSystemUIOverlayStyle(const SystemUiOverlayStyle(
     statusBarColor: Colors.transparent,
     statusBarIconBrightness: Brightness.light,
@@ -30,7 +43,15 @@ void main() async {
     systemNavigationBarIconBrightness: Brightness.light,
   ));
 
-  runApp(const GizaApp());
+  runApp(
+    MultiProvider(
+      providers: [
+        ChangeNotifierProvider(create: (_) => AudioProvider()),
+        ChangeNotifierProvider(create: (_) => AuthProvider()),
+      ],
+      child: const GizaApp(),
+    ),
+  );
 }
 
 class GizaApp extends StatelessWidget {
@@ -51,14 +72,23 @@ class GizaApp extends StatelessWidget {
           onSurface: Color(0xFFECECFF),
         ),
         splashFactory: InkRipple.splashFactory,
-        pageTransitionsTheme: const PageTransitionsTheme(
+        pageTransitionsTheme: PageTransitionsTheme(
           builders: {
-            TargetPlatform.android: CupertinoPageTransitionsBuilder(),
-            TargetPlatform.iOS: CupertinoPageTransitionsBuilder(),
+            TargetPlatform.android: const CupertinoPageTransitionsBuilder(),
+            TargetPlatform.iOS: const CupertinoPageTransitionsBuilder(),
           },
         ),
       ),
-      home: const HomeScreen(),
+      home: Consumer<AuthProvider>(
+        builder: (context, authProvider, _) {
+          if (authProvider.isLoading) {
+            return const Scaffold(
+              body: Center(child: CircularProgressIndicator(color: Color(0xFF00E5FF))),
+            );
+          }
+          return authProvider.isAuthenticated ? const HomeScreen() : const LoginScreen();
+        },
+      ),
     );
   }
 }
