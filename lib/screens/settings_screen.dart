@@ -9,13 +9,15 @@ import '../providers/auth_provider.dart';
 import '../providers/theme_provider.dart';
 import 'theme_creator_screen.dart';
 
-const _bg       = Color(0xFF0C0C14);
-const _surface  = Color(0xFF141420);
-const _surface2 = Color(0xFF1C1C2A);
-const _accent   = Color(0xFFFF8C42);
-const _accent2  = Color(0xFFFF5F6D);
-const _textPri  = Color(0xFFF0EFFF);
-const _textSec  = Color(0xFF6E6E8A);
+// ── Design tokens (dark fallbacks — overridden at runtime by ThemeProvider) ─
+//
+// These are used ONLY by the helper widgets that are built outside a full
+// BuildContext (e.g. the _SettingsSection / _SettingsTile helpers).  Every
+// widget that has a BuildContext reads its colors from Theme.of(context) so
+// the light theme is honoured correctly.
+//
+const _accentFallback  = Color(0xFFFF8C42);
+const _accent2Fallback = Color(0xFFFF5F6D);
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -27,10 +29,10 @@ class SettingsScreen extends StatefulWidget {
 class _SettingsScreenState extends State<SettingsScreen> {
   final _db = HiveHelper.instance;
 
-  bool _autoDownload = false;
+  bool _autoDownload      = false;
   bool _downloadOnWifiOnly = true;
-  bool _showNotifications = true;
-  String _audioQuality = 'best';
+  bool _showNotifications  = true;
+  String _audioQuality     = 'best';
 
   @override
   void initState() {
@@ -40,10 +42,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   void _loadSettings() {
     setState(() {
-      _autoDownload = _db.getSetting<bool>('auto_download') ?? false;
-      _downloadOnWifiOnly = _db.getSetting<bool>('wifi_only') ?? true;
-      _showNotifications = _db.getSetting<bool>('notifications') ?? true;
-      _audioQuality = _db.getSetting<String>('audio_quality') ?? 'best';
+      _autoDownload        = _db.getSetting<bool>('auto_download')   ?? false;
+      _downloadOnWifiOnly  = _db.getSetting<bool>('wifi_only')       ?? true;
+      _showNotifications   = _db.getSetting<bool>('notifications')   ?? true;
+      _audioQuality        = _db.getSetting<String>('audio_quality') ?? 'best';
     });
   }
 
@@ -51,123 +53,119 @@ class _SettingsScreenState extends State<SettingsScreen> {
     await _db.setSetting(key, value);
   }
 
-  Future<void> _clearCache() async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        backgroundColor: _surface,
-        title: const Text('Clear Cache?', style: TextStyle(color: _textPri)),
-        content: const Text(
-          'This will remove all downloaded songs. You can re-download them later.',
-          style: TextStyle(color: _textSec, fontSize: 14),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('Cancel', style: TextStyle(color: _textSec)),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(context, true),
-            child: const Text('Clear', style: TextStyle(color: _accent2)),
-          ),
-        ],
-      ),
-    );
+  // ── Helpers ────────────────────────────────────────────────────────────────
 
-    if (confirmed == true) {
-      // TODO: Implement cache clearing
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Cache cleared successfully'),
-            backgroundColor: _surface2,
-          ),
-        );
-      }
-    }
+  /// Shorthand for the current theme's CustomTheme (falls back to dark).
+  CustomTheme _ct(BuildContext context) =>
+      context.read<ThemeProvider>().currentTheme ?? CustomTheme.darkTheme;
+
+  Color _accent(BuildContext context) =>
+      Theme.of(context).colorScheme.primary;
+
+  Color _accent2(BuildContext context) =>
+      Theme.of(context).colorScheme.secondary;
+
+  Color _textPri(BuildContext context) =>
+      Theme.of(context).colorScheme.onSurface;
+
+  Color _textSec(BuildContext context) =>
+      Theme.of(context).colorScheme.onSurface.withOpacity(0.55);
+
+  Color _surfaceColor(BuildContext context) =>
+      Theme.of(context).colorScheme.surface;
+
+  void _showSnack(String msg) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(msg)),
+    );
+  }
+
+  // ── Dialogs ────────────────────────────────────────────────────────────────
+
+  Future<bool?> _confirmDialog({
+    required String title,
+    required String body,
+    required String confirmLabel,
+  }) =>
+      showDialog<bool>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: Text(title),
+          content: Text(body),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: Text('Cancel',
+                  style: TextStyle(color: _textSec(ctx))),
+            ),
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: Text(confirmLabel,
+                  style: TextStyle(color: _accent2(ctx))),
+            ),
+          ],
+        ),
+      );
+
+  Future<void> _clearCache() async {
+    final ok = await _confirmDialog(
+      title: 'Clear Cache?',
+      body: 'This will remove all downloaded songs. You can re-download them later.',
+      confirmLabel: 'Clear',
+    );
+    if (ok == true) _showSnack('Cache cleared successfully');
   }
 
   Future<void> _clearHistory() async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        backgroundColor: _surface,
-        title: const Text('Clear History?', style: TextStyle(color: _textPri)),
-        content: const Text(
-          'This will remove your play history.',
-          style: TextStyle(color: _textSec, fontSize: 14),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('Cancel', style: TextStyle(color: _textSec)),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(context, true),
-            child: const Text('Clear', style: TextStyle(color: _accent2)),
-          ),
-        ],
-      ),
+    final ok = await _confirmDialog(
+      title: 'Clear History?',
+      body: 'This will remove your play history.',
+      confirmLabel: 'Clear',
     );
-
-    if (confirmed == true) {
+    if (ok == true) {
       await _db.clearHistory();
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('History cleared'),
-            backgroundColor: _surface2,
-          ),
-        );
-      }
+      _showSnack('History cleared');
     }
   }
 
+  // ── Build ──────────────────────────────────────────────────────────────────
+
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final bgColor = theme.scaffoldBackgroundColor;
-    final surfaceColor = theme.colorScheme.surface;
-    final textPriColor = theme.colorScheme.onSurface;
-    final textSecColor = theme.colorScheme.onSurface.withOpacity(0.6);
-    final accentColor = theme.colorScheme.primary;
-    
     return Scaffold(
-      backgroundColor: bgColor,
       appBar: AppBar(
-        backgroundColor: bgColor,
-        elevation: 0,
         leading: IconButton(
-          icon: Icon(Icons.arrow_back_rounded, color: textPriColor),
+          icon: const Icon(Icons.arrow_back_rounded),
           onPressed: () => Navigator.pop(context),
         ),
-        title: Text('Settings',
-            style: TextStyle(color: textPriColor, fontWeight: FontWeight.w700)),
+        title: const Text('Settings'),
       ),
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
-          _buildAccountSection(),
+          _buildAccountSection(context),
           const SizedBox(height: 24),
-          _buildAppearanceSection(),
+          _buildAppearanceSection(context),
           const SizedBox(height: 24),
-          _buildDownloadSection(),
+          _buildDownloadSection(context),
           const SizedBox(height: 24),
-          _buildPlaybackSection(),
+          _buildPlaybackSection(context),
           const SizedBox(height: 24),
-          _buildDataSection(),
+          _buildDataSection(context),
           const SizedBox(height: 24),
-          _buildAboutSection(),
+          _buildAboutSection(context),
+          const SizedBox(height: 32),
         ],
       ),
     );
   }
 
-  // ── Account Section ────────────────────────────────────────────────────────
+  // ── Account ────────────────────────────────────────────────────────────────
 
-  Widget _buildAccountSection() {
+  Widget _buildAccountSection(BuildContext context) {
     return Consumer<AuthProvider>(
-      builder: (context, authProvider, _) {
+      builder: (ctx, authProvider, _) {
         final user = authProvider.user;
         return _SettingsSection(
           title: 'Account',
@@ -175,7 +173,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
             if (user != null) ...[
               _SettingsTile(
                 icon: Icons.person_rounded,
-                title: 'Signed in as Guest',
+                title: 'Signed in',
                 subtitle: user.email ?? 'Anonymous User',
                 trailing: const SizedBox.shrink(),
               ),
@@ -184,33 +182,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 title: 'Sign Out',
                 subtitle: 'Log out from your account',
                 onTap: () async {
-                  final confirmed = await showDialog<bool>(
-                    context: context,
-                    builder: (context) => AlertDialog(
-                      backgroundColor: _surface,
-                      title: const Text('Sign Out?',
-                          style: TextStyle(color: _textPri)),
-                      content: const Text(
-                        'Are you sure you want to sign out?',
-                        style: TextStyle(color: _textSec, fontSize: 14),
-                      ),
-                      actions: [
-                        TextButton(
-                          onPressed: () => Navigator.pop(context, false),
-                          child: const Text('Cancel',
-                              style: TextStyle(color: _textSec)),
-                        ),
-                        TextButton(
-                          onPressed: () => Navigator.pop(context, true),
-                          child: const Text('Sign Out',
-                              style: TextStyle(color: _accent2)),
-                        ),
-                      ],
-                    ),
+                  final ok = await _confirmDialog(
+                    title: 'Sign Out?',
+                    body: 'Are you sure you want to sign out?',
+                    confirmLabel: 'Sign Out',
                   );
-                  if (confirmed == true) {
-                    await authProvider.signOut();
-                  }
+                  if (ok == true) await authProvider.signOut();
                 },
               ),
             ] else ...[
@@ -229,25 +206,26 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
-  // ── Appearance Section ─────────────────────────────────────────────────────
+  // ── Appearance ─────────────────────────────────────────────────────────────
 
-  Widget _buildAppearanceSection() {
+  Widget _buildAppearanceSection(BuildContext context) {
     return Consumer<ThemeProvider>(
-      builder: (context, themeProvider, _) {
+      builder: (ctx, themeProvider, _) {
         final currentTheme = themeProvider.currentTheme ?? CustomTheme.darkTheme;
-        final customThemes = themeProvider.customThemes;
-        
+        final hasCustom = themeProvider.customThemes
+            .any((t) => !t.isDefault);
+
         return _SettingsSection(
           title: 'Appearance',
           children: [
             _SettingsTile(
               icon: Icons.palette_rounded,
-              title: 'Current Theme',
+              title: 'Theme',
               subtitle: currentTheme.name,
-              onTap: () => _showThemeSelector(themeProvider),
+              onTap: () => _showThemeSelector(ctx, themeProvider),
             ),
             _SettingsTile(
-              icon: Icons.add_rounded,
+              icon: Icons.add_circle_outline_rounded,
               title: 'Create Custom Theme',
               subtitle: 'Design your own color scheme',
               onTap: () => Navigator.push(
@@ -257,12 +235,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 ),
               ),
             ),
-            if (customThemes.where((t) => !t.isDefault).isNotEmpty)
+            if (hasCustom)
               _SettingsTile(
-                icon: Icons.edit_rounded,
+                icon: Icons.tune_rounded,
                 title: 'Manage Themes',
-                subtitle: '${customThemes.where((t) => !t.isDefault).length} custom themes',
-                onTap: () => _showManageThemes(themeProvider),
+                subtitle:
+                    '${themeProvider.customThemes.where((t) => !t.isDefault).length} custom themes',
+                onTap: () => _showManageThemes(ctx, themeProvider),
               ),
           ],
         );
@@ -270,23 +249,24 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
-  Future<void> _showThemeSelector(ThemeProvider provider) async {
+  Future<void> _showThemeSelector(
+      BuildContext context, ThemeProvider provider) async {
     await showDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        backgroundColor: _surface,
-        title: const Text('Choose Theme', style: TextStyle(color: _textPri)),
+      builder: (ctx) => AlertDialog(
+        title: const Text('Choose Theme'),
         content: SingleChildScrollView(
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: provider.customThemes.map((theme) {
               return _ThemeOption(
                 title: theme.name,
-                subtitle: theme.isDefault ? 'Default' : 'Custom',
-                selected: provider.currentTheme?.id == theme.id,
+                subtitle: theme.isDefault ? 'Built-in' : 'Custom',
+                selected:
+                    provider.currentTheme?.id == theme.id,
                 onTap: () {
                   provider.setTheme(theme);
-                  Navigator.pop(context);
+                  Navigator.pop(ctx);
                 },
               );
             }).toList(),
@@ -296,12 +276,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
-  Future<void> _showManageThemes(ThemeProvider provider) async {
+  Future<void> _showManageThemes(
+      BuildContext context, ThemeProvider provider) async {
     await showDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        backgroundColor: _surface,
-        title: const Text('Manage Themes', style: TextStyle(color: _textPri)),
+      builder: (ctx) => AlertDialog(
+        title: const Text('Manage Themes'),
         content: SingleChildScrollView(
           child: Column(
             mainAxisSize: MainAxisSize.min,
@@ -309,27 +289,30 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 .where((t) => !t.isDefault)
                 .map((theme) {
               return ListTile(
-                title: Text(theme.name, style: const TextStyle(color: _textPri)),
+                title: Text(theme.name),
                 trailing: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     IconButton(
-                      icon: const Icon(Icons.edit_rounded, color: _accent, size: 20),
+                      icon: Icon(Icons.edit_rounded,
+                          color: _accent(context), size: 20),
                       onPressed: () {
-                        Navigator.pop(context);
+                        Navigator.pop(ctx);
                         Navigator.push(
                           context,
                           MaterialPageRoute(
-                            builder: (_) => ThemeCreatorScreen(editTheme: theme),
+                            builder: (_) =>
+                                ThemeCreatorScreen(editTheme: theme),
                           ),
                         );
                       },
                     ),
                     IconButton(
-                      icon: const Icon(Icons.delete_rounded, color: _accent2, size: 20),
+                      icon: Icon(Icons.delete_rounded,
+                          color: _accent2(context), size: 20),
                       onPressed: () async {
                         await provider.deleteCustomTheme(theme.id);
-                        if (context.mounted) Navigator.pop(context);
+                        if (ctx.mounted) Navigator.pop(ctx);
                       },
                     ),
                   ],
@@ -340,17 +323,18 @@ class _SettingsScreenState extends State<SettingsScreen> {
         ),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Close', style: TextStyle(color: _accent)),
+            onPressed: () => Navigator.pop(ctx),
+            child: Text('Close',
+                style: TextStyle(color: _accent(context))),
           ),
         ],
       ),
     );
   }
 
-  // ── Download Section ───────────────────────────────────────────────────────
+  // ── Downloads ──────────────────────────────────────────────────────────────
 
-  Widget _buildDownloadSection() {
+  Widget _buildDownloadSection(BuildContext context) {
     return _SettingsSection(
       title: 'Downloads',
       children: [
@@ -360,11 +344,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
           subtitle: 'Automatically download songs when playing',
           trailing: Switch(
             value: _autoDownload,
-            onChanged: (value) {
-              setState(() => _autoDownload = value);
-              _saveSetting('auto_download', value);
+            onChanged: (v) {
+              setState(() => _autoDownload = v);
+              _saveSetting('auto_download', v);
             },
-            activeColor: _accent,
           ),
         ),
         _SettingsTile(
@@ -373,18 +356,17 @@ class _SettingsScreenState extends State<SettingsScreen> {
           subtitle: 'Save mobile data',
           trailing: Switch(
             value: _downloadOnWifiOnly,
-            onChanged: (value) {
-              setState(() => _downloadOnWifiOnly = value);
-              _saveSetting('wifi_only', value);
+            onChanged: (v) {
+              setState(() => _downloadOnWifiOnly = v);
+              _saveSetting('wifi_only', v);
             },
-            activeColor: _accent,
           ),
         ),
         _SettingsTile(
           icon: Icons.high_quality_rounded,
           title: 'Audio Quality',
           subtitle: _getQualityLabel(_audioQuality),
-          onTap: () => _showQualityDialog(),
+          onTap: _showQualityDialog,
         ),
       ],
     );
@@ -392,79 +374,50 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   String _getQualityLabel(String quality) {
     switch (quality) {
-      case 'best':
-        return 'Best Available (Highest quality)';
-      case 'high':
-        return 'High (320kbps)';
-      case 'medium':
-        return 'Medium (192kbps)';
-      case 'low':
-        return 'Low (128kbps)';
-      default:
-        return 'Best Available';
+      case 'best':   return 'Best Available';
+      case 'high':   return 'High (320 kbps)';
+      case 'medium': return 'Medium (192 kbps)';
+      case 'low':    return 'Low (128 kbps)';
+      default:       return 'Best Available';
     }
   }
 
   Future<void> _showQualityDialog() async {
+    final options = [
+      ('best',   'Best Available', 'Highest quality (Recommended)'),
+      ('high',   'High (320 kbps)', 'Excellent quality, larger files'),
+      ('medium', 'Medium (192 kbps)', 'Good quality, balanced size'),
+      ('low',    'Low (128 kbps)', 'Acceptable quality, smallest files'),
+    ];
     await showDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        backgroundColor: _surface,
-        title: const Text('Audio Quality', style: TextStyle(color: _textPri)),
+      builder: (ctx) => AlertDialog(
+        title: const Text('Audio Quality'),
         content: SingleChildScrollView(
           child: Column(
             mainAxisSize: MainAxisSize.min,
-            children: [
-              _ThemeOption(
-                title: 'Best Available',
-                subtitle: 'Highest quality (Recommended)',
-                selected: _audioQuality == 'best',
+            children: options.map((o) {
+              final (key, label, sub) = o;
+              return _ThemeOption(
+                title: label,
+                subtitle: sub,
+                selected: _audioQuality == key,
                 onTap: () {
-                  setState(() => _audioQuality = 'best');
-                  _saveSetting('audio_quality', 'best');
-                  Navigator.pop(context);
+                  setState(() => _audioQuality = key);
+                  _saveSetting('audio_quality', key);
+                  Navigator.pop(ctx);
                 },
-              ),
-              _ThemeOption(
-                title: 'High (320kbps)',
-                subtitle: 'Excellent quality, larger files',
-                selected: _audioQuality == 'high',
-                onTap: () {
-                  setState(() => _audioQuality = 'high');
-                  _saveSetting('audio_quality', 'high');
-                  Navigator.pop(context);
-                },
-              ),
-              _ThemeOption(
-                title: 'Medium (192kbps)',
-                subtitle: 'Good quality, balanced size',
-                selected: _audioQuality == 'medium',
-                onTap: () {
-                  setState(() => _audioQuality = 'medium');
-                  _saveSetting('audio_quality', 'medium');
-                  Navigator.pop(context);
-                },
-              ),
-              _ThemeOption(
-                title: 'Low (128kbps)',
-                subtitle: 'Acceptable quality, smallest files',
-                selected: _audioQuality == 'low',
-                onTap: () {
-                  setState(() => _audioQuality = 'low');
-                  _saveSetting('audio_quality', 'low');
-                  Navigator.pop(context);
-                },
-              ),
-            ],
+              );
+            }).toList(),
           ),
         ),
       ),
     );
   }
 
-  // ── Playback Section ───────────────────────────────────────────────────────
+  // ── Playback ───────────────────────────────────────────────────────────────
 
-  Widget _buildPlaybackSection() {
+  Widget _buildPlaybackSection(BuildContext context) {
     return _SettingsSection(
       title: 'Playback',
       children: [
@@ -474,20 +427,19 @@ class _SettingsScreenState extends State<SettingsScreen> {
           subtitle: 'Display playback controls in notification',
           trailing: Switch(
             value: _showNotifications,
-            onChanged: (value) {
-              setState(() => _showNotifications = value);
-              _saveSetting('notifications', value);
+            onChanged: (v) {
+              setState(() => _showNotifications = v);
+              _saveSetting('notifications', v);
             },
-            activeColor: _accent,
           ),
         ),
       ],
     );
   }
 
-  // ── Data Section ───────────────────────────────────────────────────────────
+  // ── Data & Storage ─────────────────────────────────────────────────────────
 
-  Widget _buildDataSection() {
+  Widget _buildDataSection(BuildContext context) {
     return _SettingsSection(
       title: 'Data & Storage',
       children: [
@@ -496,51 +448,49 @@ class _SettingsScreenState extends State<SettingsScreen> {
           title: 'Clear Cache',
           subtitle: 'Remove downloaded songs',
           onTap: _clearCache,
+          destructive: true,
         ),
         _SettingsTile(
           icon: Icons.history_rounded,
           title: 'Clear History',
           subtitle: 'Remove play history',
           onTap: _clearHistory,
+          destructive: true,
         ),
       ],
     );
   }
 
-  // ── About Section ──────────────────────────────────────────────────────────
+  // ── About ──────────────────────────────────────────────────────────────────
 
-  Widget _buildAboutSection() {
+  Widget _buildAboutSection(BuildContext context) {
     return _SettingsSection(
       title: 'About',
       children: [
-        _SettingsTile(
+        const _SettingsTile(
           icon: Icons.info_rounded,
           title: 'Version',
           subtitle: '1.0.0',
-          trailing: const SizedBox.shrink(),
+          trailing: SizedBox.shrink(),
         ),
         _SettingsTile(
           icon: Icons.code_rounded,
           title: 'Open Source',
           subtitle: 'View on GitHub',
-          onTap: () {
-            // Open GitHub link
-          },
+          onTap: () {/* open GitHub link */},
         ),
         _SettingsTile(
           icon: Icons.privacy_tip_rounded,
           title: 'Privacy Policy',
           subtitle: 'Read our privacy policy',
-          onTap: () {
-            // Open privacy policy
-          },
+          onTap: () {/* open privacy policy */},
         ),
       ],
     );
   }
 }
 
-// ── Settings Section Widget ────────────────────────────────────────────────
+// ── _SettingsSection ───────────────────────────────────────────────────────
 
 class _SettingsSection extends StatelessWidget {
   final String title;
@@ -553,37 +503,40 @@ class _SettingsSection extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final accent  = Theme.of(context).colorScheme.primary;
+    final surface = Theme.of(context).colorScheme.surface;
+    final border  = Theme.of(context).colorScheme.outline;
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Padding(
-          padding: const EdgeInsets.only(left: 16, bottom: 8),
+          padding: const EdgeInsets.only(left: 4, bottom: 8),
           child: Text(
-            title,
-            style: const TextStyle(
-              color: _accent,
-              fontSize: 13,
-              fontWeight: FontWeight.w700,
-              letterSpacing: 0.5,
+            title.toUpperCase(),
+            style: TextStyle(
+              color:       accent,
+              fontSize:    11,
+              fontWeight:  FontWeight.w700,
+              letterSpacing: 0.8,
             ),
           ),
         ),
         Container(
           decoration: BoxDecoration(
-            color: _surface,
+            color: surface,
             borderRadius: BorderRadius.circular(14),
-            border: Border.all(color: const Color(0xFF22223A)),
+            border: Border.all(color: border, width: 0.5),
           ),
-          child: Column(
-            children: children,
-          ),
+          clipBehavior: Clip.antiAlias,
+          child: Column(children: children),
         ),
       ],
     );
   }
 }
 
-// ── Settings Tile Widget ───────────────────────────────────────────────────
+// ── _SettingsTile ──────────────────────────────────────────────────────────
 
 class _SettingsTile extends StatelessWidget {
   final IconData icon;
@@ -591,6 +544,7 @@ class _SettingsTile extends StatelessWidget {
   final String? subtitle;
   final Widget? trailing;
   final VoidCallback? onTap;
+  final bool destructive;
 
   const _SettingsTile({
     required this.icon,
@@ -598,59 +552,67 @@ class _SettingsTile extends StatelessWidget {
     this.subtitle,
     this.trailing,
     this.onTap,
+    this.destructive = false,
   });
 
   @override
   Widget build(BuildContext context) {
+    final cs       = Theme.of(context).colorScheme;
+    final accent   = cs.primary;
+    final textPri  = cs.onSurface;
+    final textSec  = cs.onSurface.withOpacity(0.55);
+    final iconBg   = cs.surfaceContainerHighest;
+    final tileColor = destructive ? cs.secondary : accent;
+
     return Material(
       color: Colors.transparent,
       child: InkWell(
         onTap: onTap,
-        borderRadius: BorderRadius.circular(14),
         child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 13),
           child: Row(
             children: [
+              // Icon container
               Container(
-                width: 40,
-                height: 40,
+                width: 38, height: 38,
                 decoration: BoxDecoration(
-                  color: _surface2,
+                  color: iconBg,
                   borderRadius: BorderRadius.circular(10),
                 ),
-                child: Icon(icon, color: _accent, size: 20),
+                child: Icon(icon,
+                    color: destructive ? cs.secondary : accent,
+                    size: 20),
               ),
               const SizedBox(width: 14),
+
+              // Labels
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
                       title,
-                      style: const TextStyle(
-                        color: _textPri,
-                        fontSize: 15,
-                        fontWeight: FontWeight.w600,
+                      style: TextStyle(
+                        color:       destructive ? cs.secondary : textPri,
+                        fontSize:    15,
+                        fontWeight:  FontWeight.w600,
+                        letterSpacing: -0.2,
                       ),
                     ),
                     if (subtitle != null) ...[
                       const SizedBox(height: 2),
-                      Text(
-                        subtitle!,
-                        style: const TextStyle(
-                          color: _textSec,
-                          fontSize: 12,
-                        ),
-                      ),
+                      Text(subtitle!,
+                          style: TextStyle(color: textSec, fontSize: 12)),
                     ],
                   ],
                 ),
               ),
+
+              // Trailing widget or chevron
               if (trailing != null)
                 trailing!
               else if (onTap != null)
-                const Icon(Icons.chevron_right_rounded,
-                    color: _textSec, size: 20),
+                Icon(Icons.chevron_right_rounded, color: textSec, size: 20),
             ],
           ),
         ),
@@ -659,7 +621,7 @@ class _SettingsTile extends StatelessWidget {
   }
 }
 
-// ── Theme Option Widget ────────────────────────────────────────────────────
+// ── _ThemeOption ───────────────────────────────────────────────────────────
 
 class _ThemeOption extends StatelessWidget {
   final String title;
@@ -676,18 +638,24 @@ class _ThemeOption extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final accent  = Theme.of(context).colorScheme.primary;
+    final textPri = Theme.of(context).colorScheme.onSurface;
+    final textSec = Theme.of(context).colorScheme.onSurface.withOpacity(0.55);
+
     return Material(
       color: Colors.transparent,
       child: InkWell(
         onTap: onTap,
         borderRadius: BorderRadius.circular(10),
         child: Padding(
-          padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 8),
+          padding: const EdgeInsets.symmetric(vertical: 11, horizontal: 8),
           child: Row(
             children: [
               Icon(
-                selected ? Icons.radio_button_checked : Icons.radio_button_off,
-                color: selected ? _accent : _textSec,
+                selected
+                    ? Icons.radio_button_checked_rounded
+                    : Icons.radio_button_off_rounded,
+                color: selected ? accent : textSec,
                 size: 20,
               ),
               const SizedBox(width: 12),
@@ -698,24 +666,23 @@ class _ThemeOption extends StatelessWidget {
                     Text(
                       title,
                       style: TextStyle(
-                        color: selected ? _textPri : _textSec,
-                        fontSize: 14,
-                        fontWeight: selected ? FontWeight.w600 : FontWeight.w400,
+                        color:      selected ? textPri : textSec,
+                        fontSize:   14,
+                        fontWeight: selected
+                            ? FontWeight.w600
+                            : FontWeight.w400,
                       ),
                     ),
                     if (subtitle != null) ...[
                       const SizedBox(height: 2),
-                      Text(
-                        subtitle!,
-                        style: const TextStyle(
-                          color: _textSec,
-                          fontSize: 11,
-                        ),
-                      ),
+                      Text(subtitle!,
+                          style: TextStyle(color: textSec, fontSize: 11)),
                     ],
                   ],
                 ),
               ),
+              if (selected)
+                Icon(Icons.check_rounded, color: accent, size: 18),
             ],
           ),
         ),
