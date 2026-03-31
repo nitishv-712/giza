@@ -125,17 +125,24 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final bgColor = theme.scaffoldBackgroundColor;
+    final surfaceColor = theme.colorScheme.surface;
+    final textPriColor = theme.colorScheme.onSurface;
+    final textSecColor = theme.colorScheme.onSurface.withOpacity(0.6);
+    final accentColor = theme.colorScheme.primary;
+    
     return Scaffold(
-      backgroundColor: _bg,
+      backgroundColor: bgColor,
       appBar: AppBar(
-        backgroundColor: _bg,
+        backgroundColor: bgColor,
         elevation: 0,
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back_rounded, color: _textPri),
+          icon: Icon(Icons.arrow_back_rounded, color: textPriColor),
           onPressed: () => Navigator.pop(context),
         ),
-        title: const Text('Settings',
-            style: TextStyle(color: _textPri, fontWeight: FontWeight.w700)),
+        title: Text('Settings',
+            style: TextStyle(color: textPriColor, fontWeight: FontWeight.w700)),
       ),
       body: ListView(
         padding: const EdgeInsets.all(16),

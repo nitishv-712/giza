@@ -167,12 +167,6 @@ lib/
 │   └── login_screen.dart              # Authentication
 └── db/
     └── hive_helper.dart               # Local database
-
-android/app/src/main/
-├── kotlin/com/example/giza/
-│   └── MainActivity.kt                # Flutter-Python bridge
-└── python/
-    └── yt_backend.py                  # yt-dlp audio downloader
 ```
 
 ---
@@ -189,11 +183,6 @@ android/app/src/main/
 - audioplayers (Playback)
 - youtube_explode_dart (Search)
 - audio_service (Notifications)
-
-### **Backend**
-- Chaquopy (Python in Android)
-- yt-dlp (Audio Download)
-- Kotlin (Native Bridge)
 
 ---
 
@@ -300,8 +289,6 @@ android/app/src/main/
 See `AUTH_SETUP.md` for:
 - Google Sign-In setup
 - Facebook Login setup
-- SHA-1 fingerprint: `1F:F2:7C:FB:3F:B8:4A:FF:1E:54:FB:D5:93:C5:C2:B5:F8:CF:0D:8E`
-- Facebook Key Hash: `H/J8+z+4Sv8eVPvVk8XCtfjPDY4=`
 
 ### **Playlist Feature**
 See `PLAYLIST_FEATURE.md` for:
