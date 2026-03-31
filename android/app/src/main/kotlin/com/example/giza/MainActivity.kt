@@ -33,16 +33,17 @@ class MainActivity : AudioServiceActivity() {
                         val url = call.argument<String>("url") ?: return@setMethodCallHandler result.error("ERR", "URL null", null)
                         val saveDir = call.argument<String>("saveDir") ?: return@setMethodCallHandler result.error("ERR", "Dir null", null)
                         val videoId = call.argument<String>("videoId") ?: return@setMethodCallHandler result.error("ERR", "ID null", null)
+                        val quality = call.argument<String>("quality") ?: "best"
 
                         File(saveDir).mkdirs()
                         Thread {
                             try {
                                 val startTime = System.currentTimeMillis()
 
-                                val path = backend.callAttr("download_audio", url, saveDir, videoId).toString()
+                                val path = backend.callAttr("download_audio", url, saveDir, videoId, quality).toString()
                                 
                                 val duration = System.currentTimeMillis() - startTime
-                                Log.d("GIZA_PYTHON", "download_audio finished in ${duration}ms")
+                                Log.d("GIZA_PYTHON", "download_audio finished in ${duration}ms with quality: $quality")
 
                                 runOnUiThread { result.success(path) }
                             } catch (e: Exception) {

@@ -10,11 +10,11 @@ class NotificationService {
   Future<void> init() async {
     _audioHandler = await AudioService.init(
       builder: () => GizaAudioHandler(),
-      config: AudioServiceConfig(
+      config: const AudioServiceConfig(
         androidNotificationChannelId: 'com.giza.audio',
         androidNotificationChannelName: 'Giza Music',
-        androidNotificationOngoing: true,
-        androidStopForegroundOnPause: false,
+        androidNotificationOngoing: false,
+        androidStopForegroundOnPause: true,
       ),
     );
   }

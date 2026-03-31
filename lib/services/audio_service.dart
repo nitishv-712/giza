@@ -171,22 +171,45 @@ class AudioService {
 
       _logPlay(song);
     } catch (e) {
-      print('Playback error: $e');
+      print('Playback error for "${song.title}": $e');
       _emit(GizaPlayerStatus.error);
-      rethrow;
+      
+      // If this was auto-play from queue, don't rethrow
+      // Let the caller handle it (next/previous will retry)
+      throw Exception('Failed to play: ${song.title}');
     }
   }
 
   Future<void> next() async {
     if (_playlist.isEmpty) return;
 
-    if (_isShuffle) {
-      _currentIndex = Random().nextInt(_playlist.length);
-    } else {
-      _currentIndex = (_currentIndex + 1) % _playlist.length;
+    final startIndex = _currentIndex;
+    int attempts = 0;
+    final maxAttempts = _playlist.length;
+
+    while (attempts < maxAttempts) {
+      if (_isShuffle) {
+        _currentIndex = Random().nextInt(_playlist.length);
+      } else {
+        _currentIndex = (_currentIndex + 1) % _playlist.length;
+      }
+
+      // Prevent infinite loop on same song
+      if (attempts > 0 && _currentIndex == startIndex) break;
+
+      try {
+        await play(_playlist[_currentIndex]);
+        return; // Success, exit
+      } catch (e) {
+        print('Failed to play ${_playlist[_currentIndex].title}: $e');
+        attempts++;
+        // Continue to next song
+      }
     }
 
-    await play(_playlist[_currentIndex]);
+    // All songs failed, stop playback
+    print('All songs in playlist failed to play');
+    _emit(GizaPlayerStatus.error);
   }
 
   Future<void> previous() async {
@@ -197,10 +220,30 @@ class AudioService {
       return;
     }
 
-    _currentIndex = (_currentIndex - 1) % _playlist.length;
-    if (_currentIndex < 0) _currentIndex = _playlist.length - 1;
+    final startIndex = _currentIndex;
+    int attempts = 0;
+    final maxAttempts = _playlist.length;
 
-    await play(_playlist[_currentIndex]);
+    while (attempts < maxAttempts) {
+      _currentIndex = (_currentIndex - 1) % _playlist.length;
+      if (_currentIndex < 0) _currentIndex = _playlist.length - 1;
+
+      // Prevent infinite loop
+      if (attempts > 0 && _currentIndex == startIndex) break;
+
+      try {
+        await play(_playlist[_currentIndex]);
+        return; // Success, exit
+      } catch (e) {
+        print('Failed to play ${_playlist[_currentIndex].title}: $e');
+        attempts++;
+        // Continue to previous song
+      }
+    }
+
+    // All songs failed
+    print('All songs in playlist failed to play');
+    _emit(GizaPlayerStatus.error);
   }
 
   void toggleShuffle() {
@@ -233,10 +276,14 @@ class AudioService {
       final musicDir = Directory('${appDir.path}/music');
       if (!musicDir.existsSync()) await musicDir.create(recursive: true);
 
+      // Get quality preference from settings
+      final quality = _db.getSetting<String>('audio_quality') ?? 'best';
+
       final savePath = await _ytService.downloadAudio(
         song.youtubeVideoId!,
         musicDir.path,
         onProgress: onProgress,
+        quality: quality,
       );
 
       if (!File(savePath).existsSync() || File(savePath).lengthSync() == 0) {
@@ -260,30 +307,40 @@ class AudioService {
   // ── Download & Play ────────────────────────────────────────────────────────
 
   Future<void> _downloadAndPlay(Song song) async {
-    if (song.youtubeVideoId == null) throw Exception('No video ID for song');
+    if (song.youtubeVideoId == null) {
+      throw Exception('No video ID for song: ${song.title}');
+    }
 
     _emit(GizaPlayerStatus.downloading, downloadProgress: 0.0);
 
-    final appDir   = await getApplicationDocumentsDirectory();
-    final musicDir = Directory('${appDir.path}/music');
-    if (!musicDir.existsSync()) await musicDir.create(recursive: true);
+    try {
+      final appDir   = await getApplicationDocumentsDirectory();
+      final musicDir = Directory('${appDir.path}/music');
+      if (!musicDir.existsSync()) await musicDir.create(recursive: true);
 
-    final savePath = await _ytService.downloadAudio(
-      song.youtubeVideoId!,
-      musicDir.path,
-      onProgress: (p) => _emit(GizaPlayerStatus.downloading, downloadProgress: p),
-    );
+      // Get quality preference from settings
+      final quality = _db.getSetting<String>('audio_quality') ?? 'best';
 
-    if (!File(savePath).existsSync() || File(savePath).lengthSync() == 0) {
-      throw Exception('Downloaded file is empty or missing: $savePath');
+      final savePath = await _ytService.downloadAudio(
+        song.youtubeVideoId!,
+        musicDir.path,
+        onProgress: (p) => _emit(GizaPlayerStatus.downloading, downloadProgress: p),
+        quality: quality,
+      );
+
+      if (!File(savePath).existsSync() || File(savePath).lengthSync() == 0) {
+        throw Exception('Downloaded file is empty or missing');
+      }
+
+      final updatedSong = song.copyWith(isDownloaded: true, localPath: savePath);
+      await _db.saveSong(updatedSong);
+      _currentSong = updatedSong;
+
+      _emit(GizaPlayerStatus.loading);
+      await _player.play(DeviceFileSource(savePath));
+    } catch (e) {
+      throw Exception('Download failed for "${song.title}": $e');
     }
-
-    final updatedSong = song.copyWith(isDownloaded: true, localPath: savePath);
-    await _db.saveSong(updatedSong);
-    _currentSong = updatedSong;
-
-    _emit(GizaPlayerStatus.loading);
-    await _player.play(DeviceFileSource(savePath));
   }
 
   // ── Controls ───────────────────────────────────────────────────────────────
@@ -305,7 +362,7 @@ class AudioService {
   Future<void> seek(Duration position) async => _player.seek(position);
 
   Future<void> togglePlayPause() async {
-    if (_playing) await pause(); else await resume();
+    if (_playing) {await pause();} else {await resume();}
   }
 
   // ── Helpers ────────────────────────────────────────────────────────────────

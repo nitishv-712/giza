@@ -2,15 +2,17 @@
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:giza/models/custom_theme.dart';
 import 'package:provider/provider.dart';
 import 'package:firebase_core/firebase_core.dart';
 
 import 'db/hive_helper.dart';
 import 'services/audio_service.dart';
-import 'services/auth_service.dart';
 import 'services/notification_service.dart';
 import 'providers/audio_provider.dart';
 import 'providers/auth_provider.dart';
+import 'providers/playlist_provider.dart';
+import 'providers/theme_provider.dart';
 import 'screens/home_screen.dart';
 import 'screens/login_screen.dart';
 
@@ -46,8 +48,10 @@ void main() async {
   runApp(
     MultiProvider(
       providers: [
+        ChangeNotifierProvider(create: (_) => ThemeProvider()),
         ChangeNotifierProvider(create: (_) => AudioProvider()),
         ChangeNotifierProvider(create: (_) => AuthProvider()),
+        ChangeNotifierProvider(create: (_) => PlaylistProvider()),
       ],
       child: const GizaApp(),
     ),
@@ -59,36 +63,29 @@ class GizaApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      title: 'Giza',
-      debugShowCheckedModeBanner: false,
-      theme: ThemeData(
-        useMaterial3: true,
-        brightness: Brightness.dark,
-        scaffoldBackgroundColor: const Color(0xFF080810),
-        colorScheme: const ColorScheme.dark(
-          primary: Color(0xFF00E5FF),
-          surface: Color(0xFF18182A),
-          onSurface: Color(0xFFECECFF),
-        ),
-        splashFactory: InkRipple.splashFactory,
-        pageTransitionsTheme: PageTransitionsTheme(
-          builders: {
-            TargetPlatform.android: const CupertinoPageTransitionsBuilder(),
-            TargetPlatform.iOS: const CupertinoPageTransitionsBuilder(),
-          },
-        ),
-      ),
-      home: Consumer<AuthProvider>(
-        builder: (context, authProvider, _) {
-          if (authProvider.isLoading) {
-            return const Scaffold(
-              body: Center(child: CircularProgressIndicator(color: Color(0xFF00E5FF))),
-            );
-          }
-          return authProvider.isAuthenticated ? const HomeScreen() : const LoginScreen();
-        },
-      ),
+    return Consumer<ThemeProvider>(
+      builder: (context, themeProvider, _) {
+        final theme = themeProvider.currentTheme ?? CustomTheme.darkTheme;
+        return MaterialApp(
+          title: 'Giza',
+          debugShowCheckedModeBanner: false,
+          theme: themeProvider.buildThemeData(theme),
+          home: Consumer<AuthProvider>(
+            builder: (context, authProvider, _) {
+              if (authProvider.isLoading) {
+                return const Scaffold(
+                  body: Center(
+                      child: CircularProgressIndicator(
+                          color: Color(0xFF00E5FF))),
+                );
+              }
+              return authProvider.isAuthenticated
+                  ? const HomeScreen()
+                  : const LoginScreen();
+            },
+          ),
+        );
+      },
     );
   }
 }
