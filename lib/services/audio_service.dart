@@ -3,6 +3,7 @@
 import 'dart:async';
 import 'dart:io';
 import 'dart:math';
+import 'package:flutter/foundation.dart';
 import 'package:audioplayers/audioplayers.dart';
 import 'package:path_provider/path_provider.dart';
 import '../models/song.dart';
@@ -171,7 +172,7 @@ class AudioService {
 
       _logPlay(song);
     } catch (e) {
-      print('Playback error for "${song.title}": $e');
+      debugPrint('Playback error for "${song.title}": $e');
       _emit(GizaPlayerStatus.error);
       
       // If this was auto-play from queue, don't rethrow
@@ -201,14 +202,14 @@ class AudioService {
         await play(_playlist[_currentIndex]);
         return; // Success, exit
       } catch (e) {
-        print('Failed to play ${_playlist[_currentIndex].title}: $e');
+        debugPrint('Failed to play ${_playlist[_currentIndex].title}: $e');
         attempts++;
         // Continue to next song
       }
     }
 
     // All songs failed, stop playback
-    print('All songs in playlist failed to play');
+    debugPrint('All songs in playlist failed to play');
     _emit(GizaPlayerStatus.error);
   }
 
@@ -235,14 +236,14 @@ class AudioService {
         await play(_playlist[_currentIndex]);
         return; // Success, exit
       } catch (e) {
-        print('Failed to play ${_playlist[_currentIndex].title}: $e');
+        debugPrint('Failed to play ${_playlist[_currentIndex].title}: $e');
         attempts++;
         // Continue to previous song
       }
     }
 
     // All songs failed
-    print('All songs in playlist failed to play');
+    debugPrint('All songs in playlist failed to play');
     _emit(GizaPlayerStatus.error);
   }
 
@@ -299,7 +300,7 @@ class AudioService {
 
       onDone?.call(updatedSong);
     } catch (e) {
-      print('Download error: $e');
+      debugPrint('Download error: $e');
       onError?.call(e);
     }
   }

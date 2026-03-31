@@ -75,13 +75,13 @@ class CustomTheme extends HiveObject {
         name:               name,
         isDefault:          isDefault,
         createdAt:          createdAt ?? DateTime.now(),
-        backgroundColor:    backgroundColor.value,
-        surfaceColor:       surfaceColor.value,
-        surface2Color:      surface2Color.value,
-        accentColor:        accentColor.value,
-        accent2Color:       accent2Color.value,
-        textPrimaryColor:   textPrimaryColor.value,
-        textSecondaryColor: textSecondaryColor.value,
+        backgroundColor:    backgroundColor.toARGB32(),
+        surfaceColor:       surfaceColor.toARGB32(),
+        surface2Color:      surface2Color.toARGB32(),
+        accentColor:        accentColor.toARGB32(),
+        accent2Color:       accent2Color.toARGB32(),
+        textPrimaryColor:   textPrimaryColor.toARGB32(),
+        textSecondaryColor: textSecondaryColor.toARGB32(),
       );
 
   // ── Color getters ──────────────────────────────────────────────────────────

@@ -1,17 +1,10 @@
+// lib/screens/play_screen.dart
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../services/audio_service.dart';
 import '../db/hive_helper.dart';
 import '../providers/audio_provider.dart';
-
-// ── Color tokens (match home/login) ────────────────────────────────────────
-const _bg        = Color(0xFF0C0C14);
-const _surface   = Color(0xFF141420);
-const _surface2  = Color(0xFF1C1C2A);
-const _accent    = Color(0xFFFF8C42);
-const _accent2   = Color(0xFFFF5F6D);
-const _textPri   = Color(0xFFF0EFFF);
-const _textSec   = Color(0xFF6E6E8A);
 
 class PlayScreen extends StatefulWidget {
   const PlayScreen({super.key});
@@ -30,6 +23,18 @@ class _PlayScreenState extends State<PlayScreen>
   bool _isFavourite   = false;
   bool _isDownloading = false;
   bool _isDownloaded  = false;
+
+  // ── Theme helpers ──────────────────────────────────────────────────────────
+
+  ColorScheme _cs(BuildContext ctx) => Theme.of(ctx).colorScheme;
+  Color _bg(BuildContext ctx)      => Theme.of(ctx).scaffoldBackgroundColor;
+  Color _surf(BuildContext ctx)    => _cs(ctx).surface;
+  Color _surf2(BuildContext ctx)   => _cs(ctx).surfaceContainerHighest;
+  Color _accent(BuildContext ctx)  => _cs(ctx).primary;
+  Color _accent2(BuildContext ctx) => _cs(ctx).secondary;
+  Color _textPri(BuildContext ctx) => _cs(ctx).onSurface;
+  Color _textSec(BuildContext ctx) => _cs(ctx).onSurface.withOpacity(0.55);
+  Color _border(BuildContext ctx)  => _cs(ctx).outline;
 
   @override
   void initState() {
@@ -88,10 +93,12 @@ class _PlayScreenState extends State<PlayScreen>
   void _showSnack(String msg) {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text(msg, style: const TextStyle(color: _textPri, fontSize: 13)),
-        backgroundColor: _surface2,
+        content: Text(msg,
+            style: TextStyle(color: _textPri(context), fontSize: 13)),
+        backgroundColor: _surf2(context),
         behavior: SnackBarBehavior.floating,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        shape:
+            RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
         duration: const Duration(seconds: 2),
       ),
     );
@@ -115,13 +122,13 @@ class _PlayScreenState extends State<PlayScreen>
   Widget build(BuildContext context) {
     return Consumer<AudioProvider>(
       builder: (context, audioProvider, _) {
-        final song = audioProvider.currentSong;
+        final accent = _accent(context);
 
         return Scaffold(
-          backgroundColor: _bg,
+          backgroundColor: _bg(context),
           body: Stack(
             children: [
-              // Ambient glow behind artwork
+              // Ambient glow — uses theme accent, visible on both light & dark
               Positioned(
                 top: MediaQuery.of(context).size.height * 0.15,
                 left: MediaQuery.of(context).size.width * 0.1,
@@ -132,7 +139,7 @@ class _PlayScreenState extends State<PlayScreen>
                     shape: BoxShape.circle,
                     gradient: RadialGradient(
                       colors: [
-                        _accent.withOpacity(0.12),
+                        accent.withOpacity(0.10),
                         Colors.transparent,
                       ],
                     ),
@@ -143,7 +150,7 @@ class _PlayScreenState extends State<PlayScreen>
               SafeArea(
                 child: Column(
                   children: [
-                    _buildHeader(),
+                    _buildHeader(context),
                     Expanded(
                       child: SingleChildScrollView(
                         physics: const NeverScrollableScrollPhysics(),
@@ -151,17 +158,17 @@ class _PlayScreenState extends State<PlayScreen>
                           height: MediaQuery.of(context).size.height -
                               MediaQuery.of(context).padding.top -
                               MediaQuery.of(context).padding.bottom -
-                              72, // header height approx
+                              72,
                           child: Column(
                             children: [
                               const SizedBox(height: 16),
-                              _buildArtwork(audioProvider),
+                              _buildArtwork(context, audioProvider),
                               const SizedBox(height: 32),
-                              _buildSongInfo(audioProvider),
+                              _buildSongInfo(context, audioProvider),
                               const SizedBox(height: 28),
-                              _buildProgressBar(audioProvider),
+                              _buildProgressBar(context, audioProvider),
                               const SizedBox(height: 32),
-                              _buildControls(audioProvider),
+                              _buildControls(context, audioProvider),
                               const Spacer(),
                             ],
                           ),
@@ -180,28 +187,33 @@ class _PlayScreenState extends State<PlayScreen>
 
   // ── Header ─────────────────────────────────────────────────────────────────
 
-  Widget _buildHeader() {
+  Widget _buildHeader(BuildContext context) {
     return Consumer<AudioProvider>(
-      builder: (context, audioProvider, _) {
+      builder: (ctx, audioProvider, _) {
         final streaming = _audioService.isStreaming && !_isDownloaded;
+        final accent    = _accent(ctx);
+        final textPri   = _textPri(ctx);
+        final textSec   = _textSec(ctx);
+        final surf      = _surf(ctx);
+        final border    = _border(ctx);
+
         return Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
           child: Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              // Back chevron
+              // Back button
               GestureDetector(
-                onTap: () => Navigator.pop(context),
+                onTap: () => Navigator.pop(ctx),
                 child: Container(
                   width: 40, height: 40,
                   decoration: BoxDecoration(
-                    color: _surface,
+                    color: surf,
                     borderRadius: BorderRadius.circular(12),
-                    border: Border.all(
-                        color: const Color(0xFF2A2A3E), width: 1),
+                    border: Border.all(color: border, width: 0.5),
                   ),
-                  child: const Icon(Icons.keyboard_arrow_down_rounded,
-                      color: _textPri, size: 24),
+                  child: Icon(Icons.keyboard_arrow_down_rounded,
+                      color: textPri, size: 24),
                 ),
               ),
 
@@ -209,12 +221,12 @@ class _PlayScreenState extends State<PlayScreen>
               Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  const Text(
+                  Text(
                     'Now Playing',
                     style: TextStyle(
                       fontSize: 14,
                       fontWeight: FontWeight.w700,
-                      color: _textPri,
+                      color: textPri,
                       letterSpacing: -0.3,
                     ),
                   ),
@@ -224,24 +236,24 @@ class _PlayScreenState extends State<PlayScreen>
                       padding: const EdgeInsets.symmetric(
                           horizontal: 8, vertical: 2),
                       decoration: BoxDecoration(
-                        color: _accent.withOpacity(0.12),
+                        color: accent.withOpacity(0.12),
                         borderRadius: BorderRadius.circular(20),
                         border: Border.all(
-                            color: _accent.withOpacity(0.3), width: 1),
+                            color: accent.withOpacity(0.3), width: 1),
                       ),
                       child: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
                           Icon(Icons.wifi_rounded,
                               size: 10,
-                              color: _accent.withOpacity(0.9)),
+                              color: accent.withOpacity(0.9)),
                           const SizedBox(width: 3),
                           Text(
                             'Streaming',
                             style: TextStyle(
                               fontSize: 10,
                               fontWeight: FontWeight.w600,
-                              color: _accent.withOpacity(0.9),
+                              color: accent.withOpacity(0.9),
                             ),
                           ),
                         ],
@@ -251,16 +263,16 @@ class _PlayScreenState extends State<PlayScreen>
                 ],
               ),
 
-              // Action buttons
+              // Actions
               Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   if (streaming)
                     _isDownloading
-                        ? const SizedBox(
+                        ? SizedBox(
                             width: 22, height: 22,
                             child: CircularProgressIndicator(
-                                strokeWidth: 2, color: _accent),
+                                strokeWidth: 2, color: accent),
                           )
                         : _HeaderBtn(
                             icon: Icons.download_outlined,
@@ -271,7 +283,7 @@ class _PlayScreenState extends State<PlayScreen>
                     icon: _isFavourite
                         ? Icons.favorite_rounded
                         : Icons.favorite_border_rounded,
-                    color: _isFavourite ? _accent2 : _textSec,
+                    color: _isFavourite ? _accent2(ctx) : textSec,
                     onPressed: _toggleFavourite,
                   ),
                 ],
@@ -285,9 +297,12 @@ class _PlayScreenState extends State<PlayScreen>
 
   // ── Artwork ────────────────────────────────────────────────────────────────
 
-  Widget _buildArtwork(AudioProvider audioProvider) {
+  Widget _buildArtwork(BuildContext context, AudioProvider audioProvider) {
     final currentSong = audioProvider.currentSong;
     final isPlaying   = audioProvider.isPlaying;
+    final accent      = _accent(context);
+    final bg          = _bg(context);
+    final surf2       = _surf2(context);
 
     if (isPlaying &&
         _rotationController.status != AnimationStatus.forward) {
@@ -300,13 +315,12 @@ class _PlayScreenState extends State<PlayScreen>
       child: Stack(
         alignment: Alignment.center,
         children: [
-          // Outer ring pulse decoration
           Container(
             width: 300, height: 300,
             decoration: BoxDecoration(
               shape: BoxShape.circle,
               border: Border.all(
-                color: _accent.withOpacity(0.08), width: 20),
+                  color: accent.withOpacity(0.08), width: 20),
             ),
           ),
           Container(
@@ -314,11 +328,9 @@ class _PlayScreenState extends State<PlayScreen>
             decoration: BoxDecoration(
               shape: BoxShape.circle,
               border: Border.all(
-                color: _accent.withOpacity(0.05), width: 8),
+                  color: accent.withOpacity(0.05), width: 8),
             ),
           ),
-
-          // Rotating artwork disc
           RotationTransition(
             turns: _rotationController,
             child: Container(
@@ -327,7 +339,7 @@ class _PlayScreenState extends State<PlayScreen>
                 shape: BoxShape.circle,
                 boxShadow: [
                   BoxShadow(
-                    color: _accent.withOpacity(isPlaying ? 0.30 : 0.12),
+                    color: accent.withOpacity(isPlaying ? 0.28 : 0.10),
                     blurRadius: isPlaying ? 48 : 24,
                     spreadRadius: isPlaying ? 6 : 0,
                   ),
@@ -339,19 +351,19 @@ class _PlayScreenState extends State<PlayScreen>
                         currentSong.artworkUrl,
                         key: ValueKey(currentSong.youtubeVideoId),
                         fit: BoxFit.cover,
-                        errorBuilder: (_, __, ___) => _artworkFallback(),
+                        errorBuilder: (_, __, ___) =>
+                            _artworkFallback(surf2, accent),
                       )
-                    : _artworkFallback(),
+                    : _artworkFallback(surf2, accent),
               ),
             ),
           ),
-
-          // Center vinyl hole
+          // Vinyl center hole — uses scaffold bg so it punches through cleanly
           Container(
             width: 20, height: 20,
-            decoration: const BoxDecoration(
+            decoration: BoxDecoration(
               shape: BoxShape.circle,
-              color: _bg,
+              color: bg,
             ),
           ),
         ],
@@ -359,15 +371,14 @@ class _PlayScreenState extends State<PlayScreen>
     );
   }
 
-  Widget _artworkFallback() => Container(
-        color: _surface2,
-        child: const Icon(Icons.music_note_rounded,
-            size: 90, color: _accent),
+  Widget _artworkFallback(Color surf2, Color accent) => Container(
+        color: surf2,
+        child: Icon(Icons.music_note_rounded, size: 90, color: accent),
       );
 
   // ── Song info ──────────────────────────────────────────────────────────────
 
-  Widget _buildSongInfo(AudioProvider audioProvider) {
+  Widget _buildSongInfo(BuildContext context, AudioProvider audioProvider) {
     final song = audioProvider.currentSong;
     if (song == null) return const SizedBox.shrink();
 
@@ -381,10 +392,10 @@ class _PlayScreenState extends State<PlayScreen>
               children: [
                 Text(
                   song.title,
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 22,
                     fontWeight: FontWeight.w800,
-                    color: _textPri,
+                    color: _textPri(context),
                     letterSpacing: -0.6,
                     height: 1.2,
                   ),
@@ -394,9 +405,9 @@ class _PlayScreenState extends State<PlayScreen>
                 const SizedBox(height: 6),
                 Text(
                   song.artist,
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 14,
-                    color: _textSec,
+                    color: _textSec(context),
                     fontWeight: FontWeight.w500,
                   ),
                   maxLines: 1,
@@ -412,89 +423,34 @@ class _PlayScreenState extends State<PlayScreen>
 
   // ── Progress bar ───────────────────────────────────────────────────────────
 
-  // Widget _buildProgressBar() {
-  //   return Consumer<AudioProvider>(
-  //     builder: (context, audioProvider, _) {
-  //       final position = audioProvider.position;
-  //       final duration = audioProvider.duration ?? Duration.zero;
-  //       final progress = duration.inMilliseconds > 0
-  //           ? position.inMilliseconds / duration.inMilliseconds
-  //           : 0.0;
-
-  //       return Padding(
-  //         padding: const EdgeInsets.symmetric(horizontal: 32.0),
-  //         child: Column(
-  //           children: [
-  //             SliderTheme(
-  //               data: SliderThemeData(
-  //                 trackHeight: 4,
-  //                 thumbShape: const RoundSliderThumbShape(
-  //                     enabledThumbRadius: 6),
-  //                 overlayShape: const RoundSliderOverlayShape(
-  //                     overlayRadius: 14),
-  //                 activeTrackColor:   const Color(0xFF00E5FF),
-  //                 inactiveTrackColor: const Color(0xFF18182A),
-  //                 thumbColor:         const Color(0xFF00E5FF),
-  //                 overlayColor: const Color(0xFF00E5FF).withOpacity(0.2),
-  //               ),
-  //               child: Slider(
-  //                 value: progress.clamp(0.0, 1.0),
-  //                 onChanged: _audioService.isStreaming
-  //                     ? null
-  //                     : (v) {
-  //                         audioProvider.seek(Duration(
-  //                           milliseconds:
-  //                               (v * duration.inMilliseconds).round(),
-  //                         ));
-  //                       },
-  //               ),
-  //             ),
-  //             Padding(
-  //               padding: const EdgeInsets.symmetric(horizontal: 8.0),
-  //               child: Row(
-  //                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
-  //                 children: [
-  //                   Text(_formatDuration(position),
-  //                       style: TextStyle(
-  //                           fontSize: 12,
-  //                           color: const Color(0xFFECECFF).withOpacity(0.6))),
-  //                   Text(_formatDuration(duration),
-  //                       style: TextStyle(
-  //                           fontSize: 12,
-  //                           color: const Color(0xFFECECFF).withOpacity(0.6))),
-  //                 ],
-  //               ),
-  //             ),
-  //           ],
-  //         ),
-  //       );
-  //     },
-  //   );
-  // }
-
-
-  Widget _buildProgressBar(AudioProvider audioProvider) {
+  Widget _buildProgressBar(
+      BuildContext context, AudioProvider audioProvider) {
     final position = audioProvider.position;
     final duration = audioProvider.duration ?? Duration.zero;
     final progress = duration.inMilliseconds > 0
         ? position.inMilliseconds / duration.inMilliseconds
         : 0.0;
+    final accent  = _accent(context);
+    final accent2 = _accent2(context);
+    final surf2   = _surf2(context);
+    final textPri = _textPri(context);
+    final textSec = _textSec(context);
 
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 28),
       child: Column(
         children: [
-          // Custom track
           LayoutBuilder(
-            builder: (context, constraints) {
+            builder: (ctx, constraints) {
               final trackWidth = constraints.maxWidth;
-              final filled    = trackWidth * progress.clamp(0.0, 1.0);
+              final filled     = trackWidth * progress.clamp(0.0, 1.0);
               return GestureDetector(
                 onHorizontalDragUpdate: _audioService.isStreaming
                     ? null
                     : (details) {
-                        final ratio = (details.localPosition.dx / trackWidth)
-                            .clamp(0.0, 1.0);
+                        final ratio =
+                            (details.localPosition.dx / trackWidth)
+                                .clamp(0.0, 1.0);
                         audioProvider.seek(Duration(
                           milliseconds:
                               (ratio * duration.inMilliseconds).round(),
@@ -503,36 +459,33 @@ class _PlayScreenState extends State<PlayScreen>
                 child: Stack(
                   alignment: Alignment.centerLeft,
                   children: [
-                    // Track background
                     Container(
                       height: 4,
                       width: trackWidth,
                       decoration: BoxDecoration(
-                        color: _surface2,
+                        color: surf2,
                         borderRadius: BorderRadius.circular(2),
                       ),
                     ),
-                    // Filled portion
                     Container(
                       height: 4,
                       width: filled,
                       decoration: BoxDecoration(
-                        gradient: const LinearGradient(
-                          colors: [_accent, _accent2]),
+                        gradient: LinearGradient(
+                            colors: [accent, accent2]),
                         borderRadius: BorderRadius.circular(2),
                       ),
                     ),
-                    // Thumb
                     Positioned(
                       left: (filled - 7).clamp(0.0, trackWidth - 14),
                       child: Container(
                         width: 14, height: 14,
                         decoration: BoxDecoration(
                           shape: BoxShape.circle,
-                          color: _textPri,
+                          color: textPri,
                           boxShadow: [
                             BoxShadow(
-                              color: _accent.withOpacity(0.4),
+                              color: accent.withOpacity(0.4),
                               blurRadius: 8,
                             ),
                           ],
@@ -549,12 +502,14 @@ class _PlayScreenState extends State<PlayScreen>
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               Text(_fmt(position),
-                  style: const TextStyle(
-                      color: _textSec, fontSize: 11,
+                  style: TextStyle(
+                      color: textSec,
+                      fontSize: 11,
                       fontWeight: FontWeight.w600)),
               Text(_fmt(duration),
-                  style: const TextStyle(
-                      color: _textSec, fontSize: 11,
+                  style: TextStyle(
+                      color: textSec,
+                      fontSize: 11,
                       fontWeight: FontWeight.w600)),
             ],
           ),
@@ -565,13 +520,19 @@ class _PlayScreenState extends State<PlayScreen>
 
   // ── Controls ───────────────────────────────────────────────────────────────
 
-  Widget _buildControls(AudioProvider audioProvider) {
-    final isPlaying = audioProvider.isPlaying;
-    final isShuffle = audioProvider.isShuffle;
-    final isRepeat  = audioProvider.isRepeat;
-    final status    = audioProvider.status;
+  Widget _buildControls(BuildContext context, AudioProvider audioProvider) {
+    final isPlaying  = audioProvider.isPlaying;
+    final isShuffle  = audioProvider.isShuffle;
+    final isRepeat   = audioProvider.isRepeat;
+    final status     = audioProvider.status;
     final showLoader = status == GizaPlayerStatus.downloading ||
                        status == GizaPlayerStatus.loading;
+    final accent  = _accent(context);
+    final accent2 = _accent2(context);
+    final textPri = _textPri(context);
+    final textSec = _textSec(context);
+    final surf    = _surf(context);
+    final border  = _border(context);
 
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 24),
@@ -579,40 +540,41 @@ class _PlayScreenState extends State<PlayScreen>
         mainAxisAlignment: MainAxisAlignment.spaceEvenly,
         crossAxisAlignment: CrossAxisAlignment.center,
         children: [
-          // Shuffle
           _ControlBtn(
             size: 44,
             icon: Icons.shuffle_rounded,
             iconSize: 20,
-            color: isShuffle ? _accent : _textSec,
+            color: isShuffle ? accent : textSec,
             filled: isShuffle,
+            surface: surf,
+            border: border,
+            accent: accent,
             onPressed: audioProvider.toggleShuffle,
           ),
-
-          // Previous
           _ControlBtn(
             size: 52,
             icon: Icons.skip_previous_rounded,
             iconSize: 28,
-            color: _textPri,
+            color: textPri,
+            surface: surf,
+            border: border,
+            accent: accent,
             onPressed: audioProvider.previous,
           ),
-
-          // Play / Pause
           GestureDetector(
             onTap: showLoader ? null : audioProvider.togglePlayPause,
             child: Container(
               width: 72, height: 72,
               decoration: BoxDecoration(
-                gradient: const LinearGradient(
+                gradient: LinearGradient(
                   begin: Alignment.topLeft,
                   end: Alignment.bottomRight,
-                  colors: [_accent, _accent2],
+                  colors: [accent, accent2],
                 ),
                 shape: BoxShape.circle,
                 boxShadow: [
                   BoxShadow(
-                    color: _accent.withOpacity(0.45),
+                    color: accent.withOpacity(0.45),
                     blurRadius: 20, spreadRadius: 2,
                     offset: const Offset(0, 4),
                   ),
@@ -632,23 +594,25 @@ class _PlayScreenState extends State<PlayScreen>
                     ),
             ),
           ),
-
-          // Next
           _ControlBtn(
             size: 52,
             icon: Icons.skip_next_rounded,
             iconSize: 28,
-            color: _textPri,
+            color: textPri,
+            surface: surf,
+            border: border,
+            accent: accent,
             onPressed: audioProvider.next,
           ),
-
-          // Repeat
           _ControlBtn(
             size: 44,
             icon: Icons.repeat_rounded,
             iconSize: 20,
-            color: isRepeat ? _accent : _textSec,
+            color: isRepeat ? accent : textSec,
             filled: isRepeat,
+            surface: surf,
+            border: border,
+            accent: accent,
             onPressed: audioProvider.toggleRepeat,
           ),
         ],
@@ -661,27 +625,29 @@ class _PlayScreenState extends State<PlayScreen>
 
 class _HeaderBtn extends StatelessWidget {
   final IconData icon;
-  final Color color;
+  final Color? color;
   final VoidCallback onPressed;
 
   const _HeaderBtn({
     required this.icon,
     required this.onPressed,
-    this.color = _textSec,
+    this.color,
   });
 
   @override
   Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
     return GestureDetector(
       onTap: onPressed,
       child: Container(
         width: 40, height: 40,
         decoration: BoxDecoration(
-          color: _surface,
+          color: cs.surface,
           borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: const Color(0xFF2A2A3E), width: 1),
+          border: Border.all(color: cs.outline, width: 0.5),
         ),
-        child: Icon(icon, size: 20, color: color),
+        child: Icon(icon, size: 20,
+            color: color ?? cs.onSurface.withOpacity(0.55)),
       ),
     );
   }
@@ -692,6 +658,9 @@ class _ControlBtn extends StatelessWidget {
   final IconData icon;
   final double iconSize;
   final Color color;
+  final Color surface;
+  final Color border;
+  final Color accent;
   final bool filled;
   final VoidCallback onPressed;
 
@@ -700,6 +669,9 @@ class _ControlBtn extends StatelessWidget {
     required this.icon,
     required this.iconSize,
     required this.color,
+    required this.surface,
+    required this.border,
+    required this.accent,
     required this.onPressed,
     this.filled = false,
   });
@@ -711,13 +683,11 @@ class _ControlBtn extends StatelessWidget {
       child: Container(
         width: size, height: size,
         decoration: BoxDecoration(
-          color: filled ? _accent.withOpacity(0.1) : _surface,
+          color: filled ? accent.withOpacity(0.12) : surface,
           shape: BoxShape.circle,
           border: Border.all(
-            color: filled
-                ? _accent.withOpacity(0.3)
-                : const Color(0xFF2A2A3E),
-            width: 1,
+            color: filled ? accent.withOpacity(0.35) : border,
+            width: filled ? 1 : 0.5,
           ),
         ),
         child: Icon(icon, size: iconSize, color: color),

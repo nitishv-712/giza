@@ -1,6 +1,17 @@
+// lib/screens/login_screen.dart
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/auth_provider.dart';
+
+// Login always shows before a theme is selected, so it keeps its own fixed
+// dark palette. The amber/coral pair is core brand identity on this screen.
+const _loginBg      = Color(0xFF0C0C14);
+const _loginAccent  = Color(0xFFFF8C42);
+const _loginAccent2 = Color(0xFFFF5F6D);
+const _loginTextPri = Color(0xFFF0EFFF);
+const _loginTextSec = Color(0xFF6E6E8A);
+const _loginSurface = Color(0xFF1A1A2E);
 
 class LoginScreen extends StatelessWidget {
   const LoginScreen({super.key});
@@ -14,7 +25,7 @@ class LoginScreen extends StatelessWidget {
             ScaffoldMessenger.of(context).showSnackBar(
               SnackBar(
                 content: Text(authProvider.errorMessage!),
-                backgroundColor: const Color(0xFF1E1E2E),
+                backgroundColor: _loginSurface,
                 behavior: SnackBarBehavior.floating,
                 shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(12)),
@@ -25,49 +36,41 @@ class LoginScreen extends StatelessWidget {
         }
 
         return Scaffold(
-          backgroundColor: const Color(0xFF0C0C14),
+          backgroundColor: _loginBg,
           body: Stack(
             children: [
-              // ── Background ambient blobs ────────────────────────────────
+              // ── Ambient blobs ──────────────────────────────────────────
               Positioned(
-                top: -100,
-                right: -80,
+                top: -100, right: -80,
                 child: Container(
-                  width: 300,
-                  height: 300,
+                  width: 300, height: 300,
                   decoration: BoxDecoration(
                     shape: BoxShape.circle,
-                    gradient: RadialGradient(
-                      colors: [
-                        const Color(0xFFFF8C42).withOpacity(0.18),
-                        Colors.transparent,
-                      ],
-                    ),
+                    gradient: RadialGradient(colors: [
+                      _loginAccent.withOpacity(0.18),
+                      Colors.transparent,
+                    ]),
                   ),
                 ),
               ),
               Positioned(
-                bottom: 100,
-                left: -60,
+                bottom: 100, left: -60,
                 child: Container(
-                  width: 250,
-                  height: 250,
+                  width: 250, height: 250,
                   decoration: BoxDecoration(
                     shape: BoxShape.circle,
-                    gradient: RadialGradient(
-                      colors: [
-                        const Color(0xFFB06AFF).withOpacity(0.14),
-                        Colors.transparent,
-                      ],
-                    ),
+                    gradient: RadialGradient(colors: [
+                      const Color(0xFFB06AFF).withOpacity(0.14),
+                      Colors.transparent,
+                    ]),
                   ),
                 ),
               ),
 
-              // ── Main content ───────────────────────────────────────────
+              // ── Content ────────────────────────────────────────────────
               SafeArea(
                 child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 28.0),
+                  padding: const EdgeInsets.symmetric(horizontal: 28),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
@@ -75,18 +78,17 @@ class LoginScreen extends StatelessWidget {
 
                       // Logo mark
                       Container(
-                        width: 52,
-                        height: 52,
+                        width: 52, height: 52,
                         decoration: BoxDecoration(
                           borderRadius: BorderRadius.circular(16),
                           gradient: const LinearGradient(
                             begin: Alignment.topLeft,
                             end: Alignment.bottomRight,
-                            colors: [Color(0xFFFF8C42), Color(0xFFFF5F6D)],
+                            colors: [_loginAccent, _loginAccent2],
                           ),
                           boxShadow: [
                             BoxShadow(
-                              color: const Color(0xFFFF8C42).withOpacity(0.4),
+                              color: _loginAccent.withOpacity(0.4),
                               blurRadius: 20,
                               offset: const Offset(0, 6),
                             ),
@@ -98,100 +100,93 @@ class LoginScreen extends StatelessWidget {
 
                       const SizedBox(height: 40),
 
-                      // Headline
                       const Text(
                         'Giza',
                         style: TextStyle(
                           fontSize: 52,
                           fontWeight: FontWeight.w800,
-                          color: Color(0xFFF0EFFF),
+                          color: _loginTextPri,
                           letterSpacing: -2.0,
                           height: 1.0,
                         ),
                       ),
                       const SizedBox(height: 8),
                       RichText(
-                        text: const TextSpan(
-                          children: [
-                            TextSpan(
-                              text: 'Underground ',
-                              style: TextStyle(
-                                fontSize: 17,
-                                color: Color(0xFF6E6E8A),
-                                fontWeight: FontWeight.w400,
-                              ),
+                        text: const TextSpan(children: [
+                          TextSpan(
+                            text: 'Underground ',
+                            style: TextStyle(
+                              fontSize: 17,
+                              color: _loginTextSec,
+                              fontWeight: FontWeight.w400,
                             ),
-                            TextSpan(
-                              text: 'music streaming',
-                              style: TextStyle(
-                                fontSize: 17,
-                                color: Color(0xFFFF8C42),
-                                fontWeight: FontWeight.w500,
-                              ),
+                          ),
+                          TextSpan(
+                            text: 'music streaming',
+                            style: TextStyle(
+                              fontSize: 17,
+                              color: _loginAccent,
+                              fontWeight: FontWeight.w500,
                             ),
-                          ],
-                        ),
+                          ),
+                        ]),
                       ),
 
                       const Spacer(),
 
-                      // ── Waveform decoration ──────────────────────────
-                      _WaveformBar(),
+                      const _WaveformBar(),
                       const SizedBox(height: 56),
 
-                      // ── Sign in options ──────────────────────────────
                       const Text(
                         'Sign in to continue',
                         style: TextStyle(
                           fontSize: 13,
-                          color: Color(0xFF6E6E8A),
+                          color: _loginTextSec,
                           letterSpacing: 0.5,
                           fontWeight: FontWeight.w500,
                         ),
                       ),
                       const SizedBox(height: 16),
 
-                      // Google button
+                      // Google
                       _AuthButton(
                         onPressed: authProvider.isLoading
                             ? null
-                            : () => authProvider.signInWithGoogle(),
+                            : authProvider.signInWithGoogle,
                         isLoading: authProvider.isLoading,
                         label: 'Continue with Google',
                         icon: Icons.g_mobiledata,
                         iconSize: 30,
-                        backgroundColor: const Color(0xFFF0EFFF),
-                        foregroundColor: const Color(0xFF0C0C14),
+                        backgroundColor: _loginTextPri,
+                        foregroundColor: _loginBg,
                         glowColor: Colors.transparent,
                       ),
 
+                      // Uncomment to re-enable Facebook:
                       // const SizedBox(height: 12),
-
-                      // Facebook button
                       // _AuthButton(
                       //   onPressed: authProvider.isLoading
                       //       ? null
-                      //       : () => authProvider.signInWithFacebook(),
+                      //       : authProvider.signInWithFacebook,
                       //   isLoading: authProvider.isLoading,
                       //   label: 'Continue with Facebook',
                       //   icon: Icons.facebook_rounded,
                       //   iconSize: 24,
-                      //   backgroundColor: const Color(0xFF1A1A2E),
-                      //   foregroundColor: const Color(0xFFF0EFFF),
+                      //   backgroundColor: _loginSurface,
+                      //   foregroundColor: _loginTextPri,
                       //   borderColor: const Color(0xFF2A2A3E),
                       //   glowColor: Colors.transparent,
                       // ),
 
                       const SizedBox(height: 40),
 
-                      // Terms note
                       Center(
                         child: Text(
                           'By continuing you agree to our Terms & Privacy Policy',
                           textAlign: TextAlign.center,
                           style: TextStyle(
                             fontSize: 11,
-                            color: const Color(0xFF6E6E8A).withOpacity(0.7),
+                            color: _loginTextSec.withOpacity(0.7),
                           ),
                         ),
                       ),
@@ -208,14 +203,16 @@ class LoginScreen extends StatelessWidget {
   }
 }
 
-// ── Waveform decoration widget ─────────────────────────────────────────────
+// ── Waveform ───────────────────────────────────────────────────────────────
 
 class _WaveformBar extends StatelessWidget {
-  final List<double> _heights = const [
-    18, 32, 48, 28, 52, 38, 20, 44, 30, 56,
-    34, 24, 46, 36, 18, 50, 28, 40, 22, 52,
-    30, 44, 26, 38, 16,
+  static const _h = [
+    18.0, 32.0, 48.0, 28.0, 52.0, 38.0, 20.0, 44.0, 30.0, 56.0,
+    34.0, 24.0, 46.0, 36.0, 18.0, 50.0, 28.0, 40.0, 22.0, 52.0,
+    30.0, 44.0, 26.0, 38.0, 16.0,
   ];
+
+  const _WaveformBar();
 
   @override
   Widget build(BuildContext context) {
@@ -224,11 +221,11 @@ class _WaveformBar extends StatelessWidget {
       child: Row(
         mainAxisAlignment: MainAxisAlignment.center,
         crossAxisAlignment: CrossAxisAlignment.center,
-        children: List.generate(_heights.length, (i) {
-          final opacity = 0.15 + (i / _heights.length) * 0.5;
+        children: List.generate(_h.length, (i) {
+          final opacity = 0.15 + (i / _h.length) * 0.5;
           return Container(
             width: 3,
-            height: _heights[i],
+            height: _h[i],
             margin: const EdgeInsets.symmetric(horizontal: 2),
             decoration: BoxDecoration(
               borderRadius: BorderRadius.circular(2),
@@ -236,8 +233,8 @@ class _WaveformBar extends StatelessWidget {
                 begin: Alignment.bottomCenter,
                 end: Alignment.topCenter,
                 colors: [
-                  const Color(0xFFFF8C42).withOpacity(opacity),
-                  const Color(0xFFFF5F6D).withOpacity(opacity * 0.6),
+                  _loginAccent.withOpacity(opacity),
+                  _loginAccent2.withOpacity(opacity * 0.6),
                 ],
               ),
             ),
@@ -248,7 +245,7 @@ class _WaveformBar extends StatelessWidget {
   }
 }
 
-// ── Reusable auth button ───────────────────────────────────────────────────
+// ── Auth button ────────────────────────────────────────────────────────────
 
 class _AuthButton extends StatelessWidget {
   final VoidCallback? onPressed;
@@ -259,7 +256,6 @@ class _AuthButton extends StatelessWidget {
   final Color backgroundColor;
   final Color foregroundColor;
   final Color glowColor;
-  final Color? borderColor;
 
   const _AuthButton({
     required this.onPressed,
@@ -270,7 +266,6 @@ class _AuthButton extends StatelessWidget {
     required this.backgroundColor,
     required this.foregroundColor,
     required this.glowColor,
-    this.borderColor,
   });
 
   @override
@@ -283,16 +278,13 @@ class _AuthButton extends StatelessWidget {
         decoration: BoxDecoration(
           color: backgroundColor,
           borderRadius: BorderRadius.circular(14),
-          border: borderColor != null
-              ? Border.all(color: borderColor!, width: 1)
-              : null,
           boxShadow: glowColor != Colors.transparent
               ? [
                   BoxShadow(
                     color: glowColor.withOpacity(0.25),
                     blurRadius: 16,
                     offset: const Offset(0, 4),
-                  )
+                  ),
                 ]
               : null,
         ),
@@ -301,12 +293,9 @@ class _AuthButton extends StatelessWidget {
           children: [
             if (isLoading)
               SizedBox(
-                width: 20,
-                height: 20,
+                width: 20, height: 20,
                 child: CircularProgressIndicator(
-                  strokeWidth: 2,
-                  color: foregroundColor,
-                ),
+                    strokeWidth: 2, color: foregroundColor),
               )
             else
               Icon(icon, size: iconSize, color: foregroundColor),

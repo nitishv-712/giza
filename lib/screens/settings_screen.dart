@@ -3,9 +3,10 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
-import '../db/hive_helper.dart';
+// import '../db/hive_helper.dart';
 import '../models/custom_theme.dart';
 import '../providers/auth_provider.dart';
+import '../providers/settings_provider.dart';
 import '../providers/theme_provider.dart';
 import 'theme_creator_screen.dart';
 
@@ -16,8 +17,6 @@ import 'theme_creator_screen.dart';
 // widget that has a BuildContext reads its colors from Theme.of(context) so
 // the light theme is honoured correctly.
 //
-const _accentFallback  = Color(0xFFFF8C42);
-const _accent2Fallback = Color(0xFFFF5F6D);
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -27,37 +26,10 @@ class SettingsScreen extends StatefulWidget {
 }
 
 class _SettingsScreenState extends State<SettingsScreen> {
-  final _db = HiveHelper.instance;
-
-  bool _autoDownload      = false;
-  bool _downloadOnWifiOnly = true;
-  bool _showNotifications  = true;
-  String _audioQuality     = 'best';
-
-  @override
-  void initState() {
-    super.initState();
-    _loadSettings();
-  }
-
-  void _loadSettings() {
-    setState(() {
-      _autoDownload        = _db.getSetting<bool>('auto_download')   ?? false;
-      _downloadOnWifiOnly  = _db.getSetting<bool>('wifi_only')       ?? true;
-      _showNotifications   = _db.getSetting<bool>('notifications')   ?? true;
-      _audioQuality        = _db.getSetting<String>('audio_quality') ?? 'best';
-    });
-  }
-
-  Future<void> _saveSetting(String key, dynamic value) async {
-    await _db.setSetting(key, value);
-  }
+  // final _db = HiveHelper.instance;
 
   // ── Helpers ────────────────────────────────────────────────────────────────
 
-  /// Shorthand for the current theme's CustomTheme (falls back to dark).
-  CustomTheme _ct(BuildContext context) =>
-      context.read<ThemeProvider>().currentTheme ?? CustomTheme.darkTheme;
 
   Color _accent(BuildContext context) =>
       Theme.of(context).colorScheme.primary;
@@ -65,14 +37,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
   Color _accent2(BuildContext context) =>
       Theme.of(context).colorScheme.secondary;
 
-  Color _textPri(BuildContext context) =>
-      Theme.of(context).colorScheme.onSurface;
+  // Color _textPri(BuildContext context) =>
+  //     Theme.of(context).colorScheme.onSurface;
 
   Color _textSec(BuildContext context) =>
       Theme.of(context).colorScheme.onSurface.withOpacity(0.55);
 
-  Color _surfaceColor(BuildContext context) =>
-      Theme.of(context).colorScheme.surface;
+  // Color _surfaceColor(BuildContext context) =>
+  //     Theme.of(context).colorScheme.surface;
 
   void _showSnack(String msg) {
     if (!mounted) return;
@@ -108,23 +80,26 @@ class _SettingsScreenState extends State<SettingsScreen> {
         ),
       );
 
-  Future<void> _clearCache() async {
+  Future<void> _clearCache(SettingsProvider provider) async {
     final ok = await _confirmDialog(
       title: 'Clear Cache?',
       body: 'This will remove all downloaded songs. You can re-download them later.',
       confirmLabel: 'Clear',
     );
-    if (ok == true) _showSnack('Cache cleared successfully');
+    if (ok == true) {
+      await provider.clearCache();
+      _showSnack('Cache cleared successfully');
+    }
   }
 
-  Future<void> _clearHistory() async {
+  Future<void> _clearHistory(SettingsProvider provider) async {
     final ok = await _confirmDialog(
       title: 'Clear History?',
       body: 'This will remove your play history.',
       confirmLabel: 'Clear',
     );
     if (ok == true) {
-      await _db.clearHistory();
+      await provider.clearHistory();
       _showSnack('History cleared');
     }
   }
@@ -335,54 +310,40 @@ class _SettingsScreenState extends State<SettingsScreen> {
   // ── Downloads ──────────────────────────────────────────────────────────────
 
   Widget _buildDownloadSection(BuildContext context) {
-    return _SettingsSection(
-      title: 'Downloads',
-      children: [
-        _SettingsTile(
-          icon: Icons.download_rounded,
-          title: 'Auto Download',
-          subtitle: 'Automatically download songs when playing',
-          trailing: Switch(
-            value: _autoDownload,
-            onChanged: (v) {
-              setState(() => _autoDownload = v);
-              _saveSetting('auto_download', v);
-            },
+    return Consumer<SettingsProvider>(
+      builder: (ctx, settings, _) => _SettingsSection(
+        title: 'Downloads',
+        children: [
+          _SettingsTile(
+            icon: Icons.download_rounded,
+            title: 'Auto Download',
+            subtitle: 'Automatically download songs when playing',
+            trailing: Switch(
+              value: settings.autoDownload,
+              onChanged: settings.setAutoDownload,
+            ),
           ),
-        ),
-        _SettingsTile(
-          icon: Icons.wifi_rounded,
-          title: 'Download on Wi-Fi Only',
-          subtitle: 'Save mobile data',
-          trailing: Switch(
-            value: _downloadOnWifiOnly,
-            onChanged: (v) {
-              setState(() => _downloadOnWifiOnly = v);
-              _saveSetting('wifi_only', v);
-            },
+          _SettingsTile(
+            icon: Icons.wifi_rounded,
+            title: 'Download on Wi-Fi Only',
+            subtitle: 'Save mobile data',
+            trailing: Switch(
+              value: settings.downloadOnWifiOnly,
+              onChanged: settings.setDownloadOnWifiOnly,
+            ),
           ),
-        ),
-        _SettingsTile(
-          icon: Icons.high_quality_rounded,
-          title: 'Audio Quality',
-          subtitle: _getQualityLabel(_audioQuality),
-          onTap: _showQualityDialog,
-        ),
-      ],
+          _SettingsTile(
+            icon: Icons.high_quality_rounded,
+            title: 'Audio Quality',
+            subtitle: settings.getQualityLabel(),
+            onTap: () => _showQualityDialog(settings),
+          ),
+        ],
+      ),
     );
   }
 
-  String _getQualityLabel(String quality) {
-    switch (quality) {
-      case 'best':   return 'Best Available';
-      case 'high':   return 'High (320 kbps)';
-      case 'medium': return 'Medium (192 kbps)';
-      case 'low':    return 'Low (128 kbps)';
-      default:       return 'Best Available';
-    }
-  }
-
-  Future<void> _showQualityDialog() async {
+  Future<void> _showQualityDialog(SettingsProvider settings) async {
     final options = [
       ('best',   'Best Available', 'Highest quality (Recommended)'),
       ('high',   'High (320 kbps)', 'Excellent quality, larger files'),
@@ -401,10 +362,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
               return _ThemeOption(
                 title: label,
                 subtitle: sub,
-                selected: _audioQuality == key,
+                selected: settings.audioQuality == key,
                 onTap: () {
-                  setState(() => _audioQuality = key);
-                  _saveSetting('audio_quality', key);
+                  settings.setAudioQuality(key);
                   Navigator.pop(ctx);
                 },
               );
@@ -418,46 +378,47 @@ class _SettingsScreenState extends State<SettingsScreen> {
   // ── Playback ───────────────────────────────────────────────────────────────
 
   Widget _buildPlaybackSection(BuildContext context) {
-    return _SettingsSection(
-      title: 'Playback',
-      children: [
-        _SettingsTile(
-          icon: Icons.notifications_rounded,
-          title: 'Show Notifications',
-          subtitle: 'Display playback controls in notification',
-          trailing: Switch(
-            value: _showNotifications,
-            onChanged: (v) {
-              setState(() => _showNotifications = v);
-              _saveSetting('notifications', v);
-            },
+    return Consumer<SettingsProvider>(
+      builder: (ctx, settings, _) => _SettingsSection(
+        title: 'Playback',
+        children: [
+          _SettingsTile(
+            icon: Icons.notifications_rounded,
+            title: 'Show Notifications',
+            subtitle: 'Display playback controls in notification',
+            trailing: Switch(
+              value: settings.showNotifications,
+              onChanged: settings.setShowNotifications,
+            ),
           ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 
   // ── Data & Storage ─────────────────────────────────────────────────────────
 
   Widget _buildDataSection(BuildContext context) {
-    return _SettingsSection(
-      title: 'Data & Storage',
-      children: [
-        _SettingsTile(
-          icon: Icons.delete_sweep_rounded,
-          title: 'Clear Cache',
-          subtitle: 'Remove downloaded songs',
-          onTap: _clearCache,
-          destructive: true,
-        ),
-        _SettingsTile(
-          icon: Icons.history_rounded,
-          title: 'Clear History',
-          subtitle: 'Remove play history',
-          onTap: _clearHistory,
-          destructive: true,
-        ),
-      ],
+    return Consumer<SettingsProvider>(
+      builder: (ctx, settings, _) => _SettingsSection(
+        title: 'Data & Storage',
+        children: [
+          _SettingsTile(
+            icon: Icons.delete_sweep_rounded,
+            title: 'Clear Cache',
+            subtitle: 'Remove downloaded songs',
+            onTap: () => _clearCache(settings),
+            destructive: true,
+          ),
+          _SettingsTile(
+            icon: Icons.history_rounded,
+            title: 'Clear History',
+            subtitle: 'Remove play history',
+            onTap: () => _clearHistory(settings),
+            destructive: true,
+          ),
+        ],
+      ),
     );
   }
 
@@ -562,7 +523,6 @@ class _SettingsTile extends StatelessWidget {
     final textPri  = cs.onSurface;
     final textSec  = cs.onSurface.withOpacity(0.55);
     final iconBg   = cs.surfaceContainerHighest;
-    final tileColor = destructive ? cs.secondary : accent;
 
     return Material(
       color: Colors.transparent,

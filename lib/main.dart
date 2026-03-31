@@ -13,6 +13,7 @@ import 'providers/audio_provider.dart';
 import 'providers/auth_provider.dart';
 import 'providers/playlist_provider.dart';
 import 'providers/theme_provider.dart';
+import 'providers/settings_provider.dart';
 import 'screens/home_screen.dart';
 import 'screens/login_screen.dart';
 
@@ -52,6 +53,7 @@ void main() async {
         ChangeNotifierProvider(create: (_) => AudioProvider()),
         ChangeNotifierProvider(create: (_) => AuthProvider()),
         ChangeNotifierProvider(create: (_) => PlaylistProvider()),
+        ChangeNotifierProvider(create: (_) => SettingsProvider()),
       ],
       child: const GizaApp(),
     ),
