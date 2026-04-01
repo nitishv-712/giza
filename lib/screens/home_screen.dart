@@ -7,6 +7,7 @@ import 'package:provider/provider.dart';
 import '../models/song.dart';
 import '../services/audio_service.dart';
 import '../services/youtube_service.dart';
+import '../services/connectivity_service.dart';
 import '../db/hive_helper.dart';
 import '../providers/audio_provider.dart';
 import '../providers/auth_provider.dart';
@@ -29,6 +30,7 @@ class _HomeScreenState extends State<HomeScreen>
     with SingleTickerProviderStateMixin {
   final _audioService   = AudioService.instance;
   final _youtubeService = YoutubeService.instance;
+  final _connectivityService = ConnectivityService.instance;
   final _db             = HiveHelper.instance;
 
   late TabController _tabController;
@@ -96,6 +98,12 @@ class _HomeScreenState extends State<HomeScreen>
       setState(() { _searchResults = []; _isSearching = false; });
       return;
     }
+    
+    if (!_connectivityService.isConnected) {
+      _showSnack('No internet connection');
+      return;
+    }
+    
     setState(() => _isSearching = true);
     try {
       final results = await _youtubeService.searchTracks(query, limit: 30);
@@ -850,6 +858,20 @@ class _SongTile extends StatelessWidget {
                 icon: Icons.playlist_add_rounded,
                 color: textSec,
                 onPressed: onAddToPlaylist,
+              ),
+              _TileIconBtn(
+                icon: Icons.play_arrow_rounded,
+                color: textSec,
+                onPressed: () {
+                  final audioProvider = context.read<AudioProvider>();
+                  audioProvider.addToPlayNext(song);
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text('Added to Play Next'),
+                      duration: Duration(seconds: 1),
+                    ),
+                  );
+                },
               ),
               Text(
                 song.durationFormatted,

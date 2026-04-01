@@ -14,6 +14,10 @@ class AudioProvider extends ChangeNotifier {
   Duration? get duration => _audioService.duration;
   bool get isShuffle => _audioService.isShuffle;
   bool get isRepeat => _audioService.isRepeat;
+  bool get offlineMode => _audioService.offlineMode;
+  List<Song> get playNextQueue => _audioService.playNextQueue;
+  bool get isPreFetching => _audioService.isPreFetching;
+  String? get preFetchedVideoId => _audioService.preFetchedVideoId;
 
   GizaPlayerStatus _status = GizaPlayerStatus.idle;
   GizaPlayerStatus get status => _status;
@@ -84,6 +88,21 @@ class AudioProvider extends ChangeNotifier {
 
   void toggleRepeat() {
     _audioService.toggleRepeat();
+    notifyListeners();
+  }
+
+  void toggleOfflineMode() {
+    _audioService.toggleOfflineMode();
+    notifyListeners();
+  }
+
+  void addToPlayNext(Song song) {
+    _audioService.addToPlayNext(song);
+    notifyListeners();
+  }
+
+  void clearPlayNext() {
+    _audioService.clearPlayNext();
     notifyListeners();
   }
 }

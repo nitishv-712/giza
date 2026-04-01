@@ -1,5 +1,3 @@
-// lib/services/audio_service.dart
-
 import 'dart:async';
 import 'dart:io';
 import 'dart:math';
@@ -10,6 +8,7 @@ import '../models/song.dart';
 import '../db/hive_helper.dart';
 import '../services/youtube_service.dart';
 import '../services/notification_service.dart';
+import '../services/connectivity_service.dart';
 
 // ── Playback state ────────────────────────────────────────────────────────────
 
@@ -21,6 +20,8 @@ class GizaPlayerState {
   final double? downloadProgress;
   final bool isShuffle;
   final bool isRepeat;
+  final bool offlineMode;
+  final bool isPreFetching;
 
   const GizaPlayerState({
     required this.status,
@@ -28,6 +29,8 @@ class GizaPlayerState {
     this.downloadProgress,
     this.isShuffle = false,
     this.isRepeat = false,
+    this.offlineMode = false,
+    this.isPreFetching = false,
   });
 }
 
@@ -41,6 +44,7 @@ class AudioService {
   final _db        = HiveHelper.instance;
   final _ytService = YoutubeService.instance;
   final _notificationService = NotificationService.instance;
+  final _connectivityService = ConnectivityService.instance;
 
   Song?   _currentSong;
   Song?   get currentSong => _currentSong;
@@ -51,14 +55,25 @@ class AudioService {
   bool _isStreaming = false;
   bool get isStreaming => _isStreaming;
 
+  // Pre-fetch management
+  bool _isPreFetching = false;
+  String? _preFetchedVideoId;
+
+  bool get isPreFetching => _isPreFetching;
+  String? get preFetchedVideoId => _preFetchedVideoId;
+
   // Queue Management
   List<Song> _playlist = [];
+  List<Song> _playNextQueue = []; // New: Play Next queue
   int _currentIndex = -1;
   bool _isShuffle = false;
   bool _isRepeat = false;
+  bool _offlineMode = false; // New: Offline mode flag
 
   bool get isShuffle => _isShuffle;
   bool get isRepeat => _isRepeat;
+  bool get offlineMode => _offlineMode;
+  List<Song> get playNextQueue => List.unmodifiable(_playNextQueue);
 
   // ── Streams ────────────────────────────────────────────────────────────────
 
@@ -106,6 +121,7 @@ class AudioService {
       _position = pos;
       _positionCtrl.add(pos);
       _updateNotification();
+      _checkPreFetch(pos);
     });
 
     _player.onDurationChanged.listen((dur) {
@@ -136,6 +152,78 @@ class AudioService {
     }
   }
 
+  void _checkPreFetch(Duration position) {
+    if (_offlineMode) return;
+    if (_playNextQueue.isNotEmpty) return;
+    if (_isPreFetching) return;
+    if (_duration == null) return;
+    if (_playlist.isEmpty) return;
+    if (!_connectivityService.isConnected) return; // Check network
+
+    final remainingSeconds = (_duration!.inSeconds - position.inSeconds);
+    if (remainingSeconds <= 10 && remainingSeconds > 0) {
+      _preFetchNextSong();
+    }
+  }
+
+  Future<void> _preFetchNextSong() async {
+    if (_isPreFetching) return;
+    
+    final nextIndex = _isShuffle 
+        ? Random().nextInt(_playlist.length)
+        : (_currentIndex + 1) % _playlist.length;
+    
+    if (nextIndex < 0 || nextIndex >= _playlist.length) return;
+    
+    final nextSong = _playlist[nextIndex];
+    final videoId = nextSong.youtubeVideoId;
+    if (videoId == null) return;
+
+    final localPath = _getCachedPath(nextSong);
+    if (localPath != null && File(localPath).existsSync()) {
+      debugPrint('Next song already cached: ${nextSong.title}');
+      return;
+    }
+
+    if (_preFetchedVideoId == videoId) return;
+
+    _isPreFetching = true;
+    _preFetchedVideoId = videoId;
+    _emit(_playing ? GizaPlayerStatus.playing : GizaPlayerStatus.paused);
+    
+    debugPrint('🔄 Pre-fetching next song: ${nextSong.title}');
+
+    try {
+      final appDir = await getApplicationDocumentsDirectory();
+      final cacheDir = Directory('${appDir.path}/cache');
+      if (!cacheDir.existsSync()) await cacheDir.create(recursive: true);
+
+      final quality = _db.getSetting<String>('audio_quality') ?? 'best';
+
+      final savePath = await _ytService.downloadAudio(
+        videoId,
+        cacheDir.path,
+        quality: quality,
+      );
+
+      if (File(savePath).existsSync() && File(savePath).lengthSync() > 0) {
+        final cachedSong = nextSong.copyWith(
+          localPath: savePath,
+          isDownloaded: false,
+        );
+        
+        _playlist[nextIndex] = cachedSong;
+        
+        debugPrint('✅ Pre-fetched successfully: ${nextSong.title}');
+      }
+    } catch (e) {
+      debugPrint('⚠️ Pre-fetch failed: $e');
+    } finally {
+      _isPreFetching = false;
+      _emit(_playing ? GizaPlayerStatus.playing : GizaPlayerStatus.paused);
+    }
+  }
+
   // ── Playlist Management ────────────────────────────────────────────────────
 
   void setPlaylist(List<Song> songs, {int initialIndex = 0}) {
@@ -159,24 +247,39 @@ class AudioService {
     _currentSong    = song;
     _currentVideoId = song.youtubeVideoId;
     _isStreaming    = false;
+    _preFetchedVideoId = null;
 
     try {
-      final localPath = _getCachedPath(song);
-
-      if (localPath != null && File(localPath).existsSync()) {
-        _emit(GizaPlayerStatus.loading);
-        await _player.play(DeviceFileSource(localPath));
-      } else {
-        await _downloadAndPlay(song);
+      final savedSong = song.youtubeVideoId != null 
+          ? _db.getSongByVideoId(song.youtubeVideoId!)
+          : null;
+      
+      if (savedSong != null && savedSong.isDownloaded && savedSong.localPath != null) {
+        final file = File(savedSong.localPath!);
+        if (file.existsSync()) {
+          _emit(GizaPlayerStatus.loading);
+          await _player.play(DeviceFileSource(savedSong.localPath!));
+          _logPlay(song);
+          return;
+        }
       }
 
+      if (song.localPath != null && File(song.localPath!).existsSync()) {
+        _emit(GizaPlayerStatus.loading);
+        await _player.play(DeviceFileSource(song.localPath!));
+        _logPlay(song);
+        return;
+      }
+
+      if (_offlineMode) {
+        throw Exception('Song not available offline');
+      }
+      
+      await _downloadAndPlay(song);
       _logPlay(song);
     } catch (e) {
       debugPrint('Playback error for "${song.title}": $e');
       _emit(GizaPlayerStatus.error);
-      
-      // If this was auto-play from queue, don't rethrow
-      // Let the caller handle it (next/previous will retry)
       throw Exception('Failed to play: ${song.title}');
     }
   }
@@ -184,6 +287,30 @@ class AudioService {
   Future<void> next() async {
     if (_playlist.isEmpty) return;
 
+    // Check if there's a song in Play Next queue
+    if (_playNextQueue.isNotEmpty) {
+      final nextSong = _playNextQueue.removeAt(0);
+      debugPrint('⏭️ Playing from Play Next queue: ${nextSong.title}');
+      
+      // In offline mode, check if available
+      if (_offlineMode) {
+        final localPath = _getCachedPath(nextSong);
+        if (localPath == null || !File(localPath).existsSync()) {
+          debugPrint('Skipping ${nextSong.title} - not available offline');
+          return next();
+        }
+      }
+      
+      try {
+        await play(nextSong);
+        return;
+      } catch (e) {
+        debugPrint('Failed to play ${nextSong.title}: $e');
+        return next();
+      }
+    }
+
+    // Normal playlist behavior
     final startIndex = _currentIndex;
     int attempts = 0;
     final maxAttempts = _playlist.length;
@@ -198,17 +325,26 @@ class AudioService {
       // Prevent infinite loop on same song
       if (attempts > 0 && _currentIndex == startIndex) break;
 
+      // In offline mode, skip songs that aren't downloaded
+      if (_offlineMode) {
+        final song = _playlist[_currentIndex];
+        final localPath = _getCachedPath(song);
+        if (localPath == null || !File(localPath).existsSync()) {
+          debugPrint('Skipping ${song.title} - not available offline');
+          attempts++;
+          continue;
+        }
+      }
+
       try {
         await play(_playlist[_currentIndex]);
-        return; // Success, exit
+        return;
       } catch (e) {
         debugPrint('Failed to play ${_playlist[_currentIndex].title}: $e');
         attempts++;
-        // Continue to next song
       }
     }
 
-    // All songs failed, stop playback
     debugPrint('All songs in playlist failed to play');
     _emit(GizaPlayerStatus.error);
   }
@@ -231,6 +367,17 @@ class AudioService {
 
       // Prevent infinite loop
       if (attempts > 0 && _currentIndex == startIndex) break;
+
+      // In offline mode, skip songs that aren't downloaded
+      if (_offlineMode) {
+        final song = _playlist[_currentIndex];
+        final localPath = _getCachedPath(song);
+        if (localPath == null || !File(localPath).existsSync()) {
+          debugPrint('Skipping ${song.title} - not available offline');
+          attempts++;
+          continue;
+        }
+      }
 
       try {
         await play(_playlist[_currentIndex]);
@@ -255,6 +402,23 @@ class AudioService {
   void toggleRepeat() {
     _isRepeat = !_isRepeat;
     _emit(_playing ? GizaPlayerStatus.playing : GizaPlayerStatus.paused);
+  }
+
+  void toggleOfflineMode() {
+    _offlineMode = !_offlineMode;
+    _emit(_playing ? GizaPlayerStatus.playing : GizaPlayerStatus.paused);
+  }
+
+  // Add song to play next (after current song)
+  void addToPlayNext(Song song) {
+    _playNextQueue.add(song);
+    debugPrint('➕ Added to Play Next: ${song.title}');
+  }
+
+  // Clear play next queue
+  void clearPlayNext() {
+    _playNextQueue.clear();
+    debugPrint('🗑️ Play Next queue cleared');
   }
 
   Future<void> stream(Song song) => play(song);
@@ -310,6 +474,11 @@ class AudioService {
   Future<void> _downloadAndPlay(Song song) async {
     if (song.youtubeVideoId == null) {
       throw Exception('No video ID for song: ${song.title}');
+    }
+
+    // Check network connectivity
+    if (!_connectivityService.isConnected) {
+      throw Exception('No internet connection');
     }
 
     _emit(GizaPlayerStatus.downloading, downloadProgress: 0.0);
@@ -400,6 +569,8 @@ class AudioService {
       downloadProgress: downloadProgress,
       isShuffle:        _isShuffle,
       isRepeat:         _isRepeat,
+      offlineMode:      _offlineMode,
+      isPreFetching:    _isPreFetching,
     ));
   }
 
@@ -408,5 +579,20 @@ class AudioService {
     await _stateCtrl.close();
     await _positionCtrl.close();
     await _durationCtrl.close();
+    await _cleanupCache();
+  }
+
+  // Clean up pre-fetched cache files
+  Future<void> _cleanupCache() async {
+    try {
+      final appDir = await getApplicationDocumentsDirectory();
+      final cacheDir = Directory('${appDir.path}/cache');
+      if (cacheDir.existsSync()) {
+        await cacheDir.delete(recursive: true);
+        debugPrint('🧹 Cache cleaned up');
+      }
+    } catch (e) {
+      debugPrint('Cache cleanup error: $e');
+    }
   }
 }

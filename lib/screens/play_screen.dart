@@ -386,38 +386,56 @@ class _PlayScreenState extends State<PlayScreen>
 
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 32),
-      child: Row(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+          Text(
+            song.title,
+            style: TextStyle(
+              fontSize: 22,
+              fontWeight: FontWeight.w800,
+              color: _textPri(context),
+              letterSpacing: -0.6,
+              height: 1.2,
+            ),
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+          ),
+          const SizedBox(height: 6),
+          Text(
+            song.artist,
+            style: TextStyle(
+              fontSize: 14,
+              color: _textSec(context),
+              fontWeight: FontWeight.w500,
+            ),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+          if (audioProvider.isPreFetching) ...[
+            const SizedBox(height: 8),
+            Row(
               children: [
-                Text(
-                  song.title,
-                  style: TextStyle(
-                    fontSize: 22,
-                    fontWeight: FontWeight.w800,
-                    color: _textPri(context),
-                    letterSpacing: -0.6,
-                    height: 1.2,
+                SizedBox(
+                  width: 12,
+                  height: 12,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    color: _accent(context).withOpacity(0.7),
                   ),
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
                 ),
-                const SizedBox(height: 6),
+                const SizedBox(width: 8),
                 Text(
-                  song.artist,
+                  'Preparing next song...',
                   style: TextStyle(
-                    fontSize: 14,
-                    color: _textSec(context),
-                    fontWeight: FontWeight.w500,
+                    fontSize: 11,
+                    color: _accent(context).withOpacity(0.8),
+                    fontWeight: FontWeight.w600,
                   ),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
                 ),
               ],
             ),
-          ),
+          ],
         ],
       ),
     );
@@ -526,6 +544,7 @@ class _PlayScreenState extends State<PlayScreen>
     final isPlaying  = audioProvider.isPlaying;
     final isShuffle  = audioProvider.isShuffle;
     final isRepeat   = audioProvider.isRepeat;
+    final offlineMode = audioProvider.offlineMode;
     final status     = audioProvider.status;
     final showLoader = status == GizaPlayerStatus.downloading ||
                        status == GizaPlayerStatus.loading;
@@ -536,89 +555,153 @@ class _PlayScreenState extends State<PlayScreen>
     final surf    = _surf(context);
     final border  = _border(context);
 
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 24),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-        crossAxisAlignment: CrossAxisAlignment.center,
-        children: [
-          _ControlBtn(
-            size: 44,
-            icon: Icons.shuffle_rounded,
-            iconSize: 20,
-            color: isShuffle ? accent : textSec,
-            filled: isShuffle,
-            surface: surf,
-            border: border,
-            accent: accent,
-            onPressed: audioProvider.toggleShuffle,
-          ),
-          _ControlBtn(
-            size: 52,
-            icon: Icons.skip_previous_rounded,
-            iconSize: 28,
-            color: textPri,
-            surface: surf,
-            border: border,
-            accent: accent,
-            onPressed: audioProvider.previous,
-          ),
-          GestureDetector(
-            onTap: showLoader ? null : audioProvider.togglePlayPause,
-            child: Container(
-              width: 72, height: 72,
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                  colors: [accent, accent2],
-                ),
-                shape: BoxShape.circle,
-                boxShadow: [
-                  BoxShadow(
-                    color: accent.withOpacity(0.45),
-                    blurRadius: 20, spreadRadius: 2,
-                    offset: const Offset(0, 4),
-                  ),
-                ],
+    return Column(
+      children: [
+        // Offline/Online Mode Toggle
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 32),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(
+                offlineMode ? Icons.cloud_off_rounded : Icons.cloud_queue_rounded,
+                size: 16,
+                color: textSec,
               ),
-              child: showLoader
-                  ? const Padding(
-                      padding: EdgeInsets.all(18),
-                      child: CircularProgressIndicator(
-                          color: Colors.white, strokeWidth: 2.5),
-                    )
-                  : Icon(
-                      isPlaying
-                          ? Icons.pause_rounded
-                          : Icons.play_arrow_rounded,
-                      color: Colors.white, size: 36,
+              const SizedBox(width: 8),
+              Text(
+                offlineMode ? 'Offline Mode' : 'Online Mode',
+                style: TextStyle(
+                  color: textSec,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              const SizedBox(width: 8),
+              GestureDetector(
+                onTap: audioProvider.toggleOfflineMode,
+                child: Container(
+                  width: 44,
+                  height: 24,
+                  decoration: BoxDecoration(
+                    color: offlineMode ? accent : surf,
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(
+                      color: offlineMode ? accent : border,
+                      width: 1,
                     ),
-            ),
+                  ),
+                  child: AnimatedAlign(
+                    duration: const Duration(milliseconds: 200),
+                    alignment: offlineMode ? Alignment.centerRight : Alignment.centerLeft,
+                    child: Container(
+                      width: 20,
+                      height: 20,
+                      margin: const EdgeInsets.all(2),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        shape: BoxShape.circle,
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withOpacity(0.2),
+                            blurRadius: 4,
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ],
           ),
-          _ControlBtn(
-            size: 52,
-            icon: Icons.skip_next_rounded,
-            iconSize: 28,
-            color: textPri,
-            surface: surf,
-            border: border,
-            accent: accent,
-            onPressed: audioProvider.next,
+        ),
+        const SizedBox(height: 24),
+        // Playback Controls
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 24),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              _ControlBtn(
+                size: 44,
+                icon: Icons.shuffle_rounded,
+                iconSize: 20,
+                color: isShuffle ? accent : textSec,
+                filled: isShuffle,
+                surface: surf,
+                border: border,
+                accent: accent,
+                onPressed: audioProvider.toggleShuffle,
+              ),
+              _ControlBtn(
+                size: 52,
+                icon: Icons.skip_previous_rounded,
+                iconSize: 28,
+                color: textPri,
+                surface: surf,
+                border: border,
+                accent: accent,
+                onPressed: audioProvider.previous,
+              ),
+              GestureDetector(
+                onTap: showLoader ? null : audioProvider.togglePlayPause,
+                child: Container(
+                  width: 72, height: 72,
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                      colors: [accent, accent2],
+                    ),
+                    shape: BoxShape.circle,
+                    boxShadow: [
+                      BoxShadow(
+                        color: accent.withOpacity(0.45),
+                        blurRadius: 20, spreadRadius: 2,
+                        offset: const Offset(0, 4),
+                      ),
+                    ],
+                  ),
+                  child: showLoader
+                      ? const Padding(
+                          padding: EdgeInsets.all(18),
+                          child: CircularProgressIndicator(
+                              color: Colors.white, strokeWidth: 2.5),
+                        )
+                      : Icon(
+                          isPlaying
+                              ? Icons.pause_rounded
+                              : Icons.play_arrow_rounded,
+                          color: Colors.white, size: 36,
+                        ),
+                ),
+              ),
+              _ControlBtn(
+                size: 52,
+                icon: Icons.skip_next_rounded,
+                iconSize: 28,
+                color: textPri,
+                surface: surf,
+                border: border,
+                accent: accent,
+                onPressed: audioProvider.next,
+              ),
+              _ControlBtn(
+                size: 44,
+                icon: Icons.repeat_rounded,
+                iconSize: 20,
+                color: isRepeat ? accent : textSec,
+                filled: isRepeat,
+                surface: surf,
+                border: border,
+                accent: accent,
+                onPressed: audioProvider.toggleRepeat,
+              ),
+            ],
           ),
-          _ControlBtn(
-            size: 44,
-            icon: Icons.repeat_rounded,
-            iconSize: 20,
-            color: isRepeat ? accent : textSec,
-            filled: isRepeat,
-            surface: surf,
-            border: border,
-            accent: accent,
-            onPressed: audioProvider.toggleRepeat,
-          ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 }
