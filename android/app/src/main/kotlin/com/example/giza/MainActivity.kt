@@ -10,9 +10,12 @@ import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
 import java.io.File
 import java.lang.System
+import java.util.concurrent.Executors
 
 // 2. Change FlutterFragmentActivity to AudioServiceActivity
 class MainActivity : AudioServiceActivity() {
+
+    private val executor = Executors.newFixedThreadPool(2)
 
     private val CHANNEL = "com.giza.app/youtube"
 
@@ -36,7 +39,7 @@ class MainActivity : AudioServiceActivity() {
                         val quality = call.argument<String>("quality") ?: "best"
 
                         File(saveDir).mkdirs()
-                        Thread {
+                        executor.execute {
                             try {
                                 val startTime = System.currentTimeMillis()
 
@@ -49,10 +52,15 @@ class MainActivity : AudioServiceActivity() {
                             } catch (e: Exception) {
                                 runOnUiThread { result.error("ERR", e.message, null) }
                             }
-                        }.start()
+                        }
                     }
                     else -> result.notImplemented()
                 }
             }
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        executor.shutdown()
     }
 }

@@ -1,5 +1,6 @@
 // lib/providers/playlist_provider.dart
 
+import 'dart:async';
 import 'package:flutter/foundation.dart';
 import '../models/playlist.dart';
 import '../models/song.dart';
@@ -11,13 +12,27 @@ class PlaylistProvider extends ChangeNotifier {
   List<Playlist> _playlists = [];
   List<Playlist> get playlists => _playlists;
 
+  Timer? _debounceTimer;
+  bool _hasUpdate = false;
+
   PlaylistProvider() {
     loadPlaylists();
   }
 
   void loadPlaylists() {
     _playlists = _db.getAllPlaylists();
-    notifyListeners();
+    _scheduleUpdate();
+  }
+
+  void _scheduleUpdate() {
+    _hasUpdate = true;
+    _debounceTimer?.cancel();
+    _debounceTimer = Timer(const Duration(milliseconds: 50), () {
+      if (_hasUpdate) {
+        _hasUpdate = false;
+        notifyListeners();
+      }
+    });
   }
 
   Future<void> createPlaylist(String name) async {
@@ -50,4 +65,10 @@ class PlaylistProvider extends ChangeNotifier {
       _db.getPlaylistSongs(playlist);
 
   Playlist? getPlaylist(String id) => _db.getPlaylist(id);
+
+  @override
+  void dispose() {
+    _debounceTimer?.cancel();
+    super.dispose();
+  }
 }

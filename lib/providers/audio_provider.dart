@@ -1,5 +1,6 @@
 // lib/providers/audio_provider.dart
 
+import 'dart:async';
 import 'package:flutter/foundation.dart';
 import '../models/song.dart';
 import '../services/audio_service.dart';
@@ -20,15 +21,35 @@ class AudioProvider extends ChangeNotifier {
   double? _downloadProgress;
   double? get downloadProgress => _downloadProgress;
 
+  Timer? _debounceTimer;
+  bool _hasUpdate = false;
+
   AudioProvider() {
     _audioService.playerStateStream.listen((state) {
       _status = state.status;
       _downloadProgress = state.downloadProgress;
-      notifyListeners();
+      _scheduleUpdate();
     });
 
-    _audioService.positionStream.listen((_) => notifyListeners());
-    _audioService.durationStream.listen((_) => notifyListeners());
+    _audioService.positionStream.listen((_) => _scheduleUpdate());
+    _audioService.durationStream.listen((_) => _scheduleUpdate());
+  }
+
+  void _scheduleUpdate() {
+    _hasUpdate = true;
+    _debounceTimer?.cancel();
+    _debounceTimer = Timer(const Duration(milliseconds: 100), () {
+      if (_hasUpdate) {
+        _hasUpdate = false;
+        notifyListeners();
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _debounceTimer?.cancel();
+    super.dispose();
   }
 
   Future<void> play(Song song, {List<Song>? playlist}) async {

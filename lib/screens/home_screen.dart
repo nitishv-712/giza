@@ -405,6 +405,9 @@ class _HomeScreenState extends State<HomeScreen>
       padding: const EdgeInsets.symmetric(vertical: 12),
       child: TabBar(
         controller: _tabController,
+        splashFactory: NoSplash.splashFactory,
+        overlayColor: WidgetStateProperty.all(Colors.transparent),
+        splashBorderRadius: BorderRadius.circular(20),
         isScrollable: true,
         padding: const EdgeInsets.symmetric(horizontal: 20),
         tabAlignment: TabAlignment.start,
@@ -496,6 +499,8 @@ class _HomeScreenState extends State<HomeScreen>
     return ListView.builder(
       padding: const EdgeInsets.fromLTRB(20, 4, 20, 16),
       itemCount: songs.length + (sectionTitle != null ? 1 : 0),
+      addAutomaticKeepAlives: true,
+      cacheExtent: 500,
       itemBuilder: (context, index) {
         if (sectionTitle != null && index == 0) {
           return Padding(
@@ -523,253 +528,154 @@ class _HomeScreenState extends State<HomeScreen>
     final isDownloaded = song.isDownloaded ||
         (_db.getSongByVideoId(videoId)?.isDownloaded ?? false);
     final isDownloading = _downloading.contains(videoId);
-    final accent   = _accent(context);
-    final accent2  = _accent2(context);
-    final textPri  = _textPri(context);
-    final textSec  = _textSec(context);
-    final surf     = _surf(context);
-    final surf2    = _surf2(context);
-    final border   = _border(context);
+
+    return _SongTile(
+      song: song,
+      currentList: currentList,
+      showActions: showActions,
+      isDownloaded: isDownloaded,
+      isDownloading: isDownloading,
+      onPlay: () => _handlePlay(song, currentList),
+      onToggleFavourite: () => _toggleFavourite(song),
+      onDelete: () => _deleteSong(song),
+      onAddToPlaylist: () => _showAddToPlaylist(song),
+      onDownload: () => _downloadSong(song),
+    );
+  }
+
+// ── Mini player ────────────────────────────────────────────────────────────
+
+  Widget _buildMiniPlayer() {
+    return Consumer<AudioProvider>(
+      builder: (context, audioProvider, child) {
+        final song = audioProvider.currentSong;
+        if (song == null) return const SizedBox.shrink();
+        return child!;
+      },
+      child: _MiniPlayerContent(),
+    );
+  }
+}
+
+// ── Helper widgets ─────────────────────────────────────────────────────────
+
+class _MiniPlayerContent extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    final audioProvider = context.watch<AudioProvider>();
+    final song = audioProvider.currentSong;
+    if (song == null) return const SizedBox.shrink();
+
+    final cs = Theme.of(context).colorScheme;
+    final accent = cs.primary;
+    final accent2 = cs.secondary;
+    final textPri = cs.onSurface;
+    final textSec = cs.onSurface.withOpacity(0.55);
+    final surf2 = cs.surfaceContainerHighest;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final playerBg = isDark ? const Color(0xFF1E1520) : accent.withOpacity(0.06);
 
     return GestureDetector(
-      onTap: () => _handlePlay(song, currentList),
+      onTap: () => Navigator.push(
+        context,
+        MaterialPageRoute(builder: (_) => const PlayScreen()),
+      ),
       child: Container(
-        margin: const EdgeInsets.only(bottom: 10),
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+        margin: const EdgeInsets.fromLTRB(12, 4, 12, 10),
+        height: 68,
         decoration: BoxDecoration(
-          color: surf,
-          borderRadius: BorderRadius.circular(14),
-          border: Border.all(color: border, width: 0.5),
+          color: playerBg,
+          borderRadius: BorderRadius.circular(18),
+          border: Border.all(color: accent.withOpacity(0.25), width: 1),
+          boxShadow: [
+            BoxShadow(
+              color: accent.withOpacity(0.12),
+              blurRadius: 20,
+              offset: const Offset(0, 4),
+            ),
+          ],
         ),
         child: Row(
           children: [
             ClipRRect(
-              borderRadius: BorderRadius.circular(10),
+              borderRadius: const BorderRadius.only(
+                topLeft: Radius.circular(17),
+                bottomLeft: Radius.circular(17),
+              ),
               child: Image.network(
                 song.artworkUrl,
-                width: 52, height: 52,
+                width: 68,
+                height: 68,
                 fit: BoxFit.cover,
+                cacheWidth: 136,
+                cacheHeight: 136,
                 errorBuilder: (_, __, ___) => Container(
-                  width: 52, height: 52,
+                  width: 68,
+                  height: 68,
                   color: surf2,
-                  child: Icon(Icons.music_note_rounded,
-                      color: accent, size: 24),
+                  child: Icon(Icons.music_note_rounded, color: accent, size: 28),
                 ),
               ),
             ),
             const SizedBox(width: 12),
             Expanded(
               child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
                     song.title,
                     style: TextStyle(
                       color: textPri,
-                      fontSize: 14,
+                      fontSize: 13,
                       fontWeight: FontWeight.w600,
                       letterSpacing: -0.2,
                     ),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                   ),
-                  const SizedBox(height: 3),
+                  const SizedBox(height: 2),
                   Text(
                     song.artist,
-                    style: TextStyle(
-                        color: textSec,
-                        fontSize: 12,
-                        fontWeight: FontWeight.w400),
+                    style: TextStyle(color: textSec, fontSize: 11),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                   ),
                 ],
               ),
             ),
-            if (showActions) ...[
-              _TileIconBtn(
-                icon: song.isFavourite
-                    ? Icons.favorite_rounded
-                    : Icons.favorite_border_rounded,
-                color: song.isFavourite ? accent2 : textSec,
-                onPressed: () => _toggleFavourite(song),
+            Container(
+              width: 40,
+              height: 40,
+              margin: const EdgeInsets.only(right: 14),
+              decoration: BoxDecoration(
+                gradient: LinearGradient(colors: [accent, accent2]),
+                shape: BoxShape.circle,
+                boxShadow: [
+                  BoxShadow(
+                    color: accent.withOpacity(0.35),
+                    blurRadius: 10,
+                  ),
+                ],
               ),
-              _TileIconBtn(
-                icon: Icons.delete_outline_rounded,
-                color: textSec,
-                onPressed: () => _deleteSong(song),
+              child: IconButton(
+                padding: EdgeInsets.zero,
+                icon: Icon(
+                  audioProvider.isPlaying
+                      ? Icons.pause_rounded
+                      : Icons.play_arrow_rounded,
+                  size: 22,
+                ),
+                color: Colors.white,
+                onPressed: audioProvider.togglePlayPause,
               ),
-            ] else ...[
-              _TileIconBtn(
-                icon: Icons.playlist_add_rounded,
-                color: textSec,
-                onPressed: () => _showAddToPlaylist(song),
-              ),
-              Text(song.durationFormatted,
-                  style: TextStyle(
-                      color: textSec,
-                      fontSize: 12,
-                      fontWeight: FontWeight.w500)),
-              const SizedBox(width: 4),
-              _buildDownloadButton(
-                videoId: videoId,
-                song: song,
-                isDownloaded: isDownloaded,
-                isDownloading: isDownloading,
-              ),
-            ],
+            ),
           ],
         ),
       ),
     );
   }
-
-  Widget _buildDownloadButton({
-    required String videoId,
-    required Song song,
-    required bool isDownloaded,
-    required bool isDownloading,
-  }) {
-    if (videoId.isEmpty) return const SizedBox.shrink();
-    if (isDownloading) {
-      return SizedBox(
-        width: 20, height: 20,
-        child: CircularProgressIndicator(
-            strokeWidth: 2, color: _accent(context)),
-      );
-    }
-    return _TileIconBtn(
-      icon: isDownloaded
-          ? Icons.download_done_rounded
-          : Icons.download_outlined,
-      color: isDownloaded ? _accent(context) : _textSec(context),
-      onPressed: isDownloaded ? null : () => _downloadSong(song),
-    );
-  }
-
-  // ── Mini player ────────────────────────────────────────────────────────────
-
-  Widget _buildMiniPlayer() {
-    return Consumer<AudioProvider>(
-      builder: (context, audioProvider, _) {
-        final song = audioProvider.currentSong;
-        if (song == null) return const SizedBox.shrink();
-
-        final accent  = _accent(context);
-        final accent2 = _accent2(context);
-        final textPri = _textPri(context);
-        final textSec = _textSec(context);
-        final surf2   = _surf2(context);
-        // Mini player uses a subtle tinted surface so it reads as a floating
-        // element on both light and dark backgrounds.
-        final isDark  =
-            Theme.of(context).brightness == Brightness.dark;
-        final playerBg = isDark
-            ? const Color(0xFF1E1520)
-            : accent.withOpacity(0.06);
-
-        return GestureDetector(
-          onTap: () => Navigator.push(context,
-                  MaterialPageRoute(builder: (_) => const PlayScreen()))
-              .then((_) => _loadSavedData()),
-          child: Container(
-            margin: const EdgeInsets.fromLTRB(12, 4, 12, 10),
-            height: 68,
-            decoration: BoxDecoration(
-              color: playerBg,
-              borderRadius: BorderRadius.circular(18),
-              border: Border.all(
-                  color: accent.withOpacity(0.25), width: 1),
-              boxShadow: [
-                BoxShadow(
-                  color: accent.withOpacity(0.12),
-                  blurRadius: 20,
-                  offset: const Offset(0, 4),
-                ),
-              ],
-            ),
-            child: Row(
-              children: [
-                ClipRRect(
-                  borderRadius: const BorderRadius.only(
-                    topLeft: Radius.circular(17),
-                    bottomLeft: Radius.circular(17),
-                  ),
-                  child: Image.network(
-                    song.artworkUrl,
-                    width: 68, height: 68,
-                    fit: BoxFit.cover,
-                    errorBuilder: (_, __, ___) => Container(
-                      width: 68, height: 68,
-                      color: surf2,
-                      child: Icon(Icons.music_note_rounded,
-                          color: accent, size: 28),
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        song.title,
-                        style: TextStyle(
-                          color: textPri,
-                          fontSize: 13,
-                          fontWeight: FontWeight.w600,
-                          letterSpacing: -0.2,
-                        ),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                      const SizedBox(height: 2),
-                      Text(
-                        song.artist,
-                        style: TextStyle(color: textSec, fontSize: 11),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ],
-                  ),
-                ),
-                Container(
-                  width: 40, height: 40,
-                  margin: const EdgeInsets.only(right: 14),
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                        colors: [accent, accent2]),
-                    shape: BoxShape.circle,
-                    boxShadow: [
-                      BoxShadow(
-                        color: accent.withOpacity(0.35),
-                        blurRadius: 10,
-                      ),
-                    ],
-                  ),
-                  child: IconButton(
-                    padding: EdgeInsets.zero,
-                    icon: Icon(
-                      audioProvider.isPlaying
-                          ? Icons.pause_rounded
-                          : Icons.play_arrow_rounded,
-                      size: 22,
-                    ),
-                    color: Colors.white,
-                    onPressed: audioProvider.togglePlayPause,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        );
-      },
-    );
-  }
 }
-
-// ── Helper widgets ─────────────────────────────────────────────────────────
 
 class _HeaderIconBtn extends StatelessWidget {
   final IconData icon;
@@ -826,6 +732,154 @@ class _TileIconBtn extends StatelessWidget {
       child: Padding(
         padding: const EdgeInsets.all(6),
         child: Icon(icon, size: 20, color: color),
+      ),
+    );
+  }
+}
+
+class _SongTile extends StatelessWidget {
+  final Song song;
+  final List<Song> currentList;
+  final bool showActions;
+  final bool isDownloaded;
+  final bool isDownloading;
+  final VoidCallback onPlay;
+  final VoidCallback onToggleFavourite;
+  final VoidCallback onDelete;
+  final VoidCallback onAddToPlaylist;
+  final VoidCallback onDownload;
+
+  const _SongTile({
+    required this.song,
+    required this.currentList,
+    required this.showActions,
+    required this.isDownloaded,
+    required this.isDownloading,
+    required this.onPlay,
+    required this.onToggleFavourite,
+    required this.onDelete,
+    required this.onAddToPlaylist,
+    required this.onDownload,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    final accent = cs.primary;
+    final accent2 = cs.secondary;
+    final textPri = cs.onSurface;
+    final textSec = cs.onSurface.withOpacity(0.55);
+    final surf = cs.surface;
+    final surf2 = cs.surfaceContainerHighest;
+    final border = cs.outline;
+
+    return GestureDetector(
+      onTap: onPlay,
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 10),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+        decoration: BoxDecoration(
+          color: surf,
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: border, width: 0.5),
+        ),
+        child: Row(
+          children: [
+            ClipRRect(
+              borderRadius: BorderRadius.circular(10),
+              child: Image.network(
+                song.artworkUrl,
+                width: 52,
+                height: 52,
+                fit: BoxFit.cover,
+                cacheWidth: 104,
+                cacheHeight: 104,
+                errorBuilder: (_, __, ___) => Container(
+                  width: 52,
+                  height: 52,
+                  color: surf2,
+                  child: Icon(Icons.music_note_rounded, color: accent, size: 24),
+                ),
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    song.title,
+                    style: TextStyle(
+                      color: textPri,
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                      letterSpacing: -0.2,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  const SizedBox(height: 3),
+                  Text(
+                    song.artist,
+                    style: TextStyle(
+                      color: textSec,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w400,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ],
+              ),
+            ),
+            if (showActions) ...[
+              _TileIconBtn(
+                icon: song.isFavourite
+                    ? Icons.favorite_rounded
+                    : Icons.favorite_border_rounded,
+                color: song.isFavourite ? accent2 : textSec,
+                onPressed: onToggleFavourite,
+              ),
+              _TileIconBtn(
+                icon: Icons.delete_outline_rounded,
+                color: textSec,
+                onPressed: onDelete,
+              ),
+            ] else ...[
+              _TileIconBtn(
+                icon: Icons.playlist_add_rounded,
+                color: textSec,
+                onPressed: onAddToPlaylist,
+              ),
+              Text(
+                song.durationFormatted,
+                style: TextStyle(
+                  color: textSec,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+              const SizedBox(width: 4),
+              if (song.youtubeVideoId?.isNotEmpty ?? false)
+                isDownloading
+                    ? SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: accent,
+                        ),
+                      )
+                    : _TileIconBtn(
+                        icon: isDownloaded
+                            ? Icons.download_done_rounded
+                            : Icons.download_outlined,
+                        color: isDownloaded ? accent : textSec,
+                        onPressed: isDownloaded ? null : onDownload,
+                      ),
+            ],
+          ],
+        ),
       ),
     );
   }

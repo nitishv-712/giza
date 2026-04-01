@@ -35,19 +35,15 @@ class YoutubeService {
     final duration = _parseDuration(video.duration);
     final title = video.title.toLowerCase();
     
-    // Duration filter: 30 seconds to 10 minutes (typical song range)
-    if (duration < 30 || duration > 600) return false;
-    
-    // Exclude shorts/reels (usually < 60 seconds)
-    if (duration < 60 && (title.contains('short') || title.contains('#short'))) {
-      return false;
-    }
+    // Duration filter: 60 seconds to 600 seconds (1 minute to 10 minutes)
+    if (duration < 60 || duration > 600) return false;
     
     // Exclude common non-music content
     final excludeKeywords = [
       'podcast',
       'interview',
       'tutorial',
+      'how to',
       'review',
       'reaction',
       'vlog',
@@ -57,6 +53,16 @@ class YoutubeService {
       'full album',
       'full concert',
       'documentary',
+      'trailer',
+      'teaser',
+      'behind the scenes',
+      'making of',
+      'explained',
+      'analysis',
+      'breakdown',
+      'lesson',
+      'course',
+      'lecture',
     ];
     
     for (final keyword in excludeKeywords) {

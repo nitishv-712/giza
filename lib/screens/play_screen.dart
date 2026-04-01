@@ -351,6 +351,8 @@ class _PlayScreenState extends State<PlayScreen>
                         currentSong.artworkUrl,
                         key: ValueKey(currentSong.youtubeVideoId),
                         fit: BoxFit.cover,
+                        cacheWidth: 496,
+                        cacheHeight: 496,
                         errorBuilder: (_, __, ___) =>
                             _artworkFallback(surf2, accent),
                       )
